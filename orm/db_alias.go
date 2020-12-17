@@ -115,6 +115,9 @@ type DB struct {
 var _ dbQuerier = new(DB)
 var _ txer = new(DB)
 
+/*
+开启事务
+*/
 func (d *DB) Begin() (*sql.Tx, error) {
 	return d.DB.Begin()
 }
@@ -409,6 +412,7 @@ func newAliasWithDb(aliasName, driverName string, db *sql.DB, params ...DBOption
 	return al, nil
 }
 
+// 设置最大空闲数
 // SetMaxIdleConns Change the max idle conns for *sql.DB, use specify database alias name
 // Deprecated you should not use this, we will remove it in the future
 func SetMaxIdleConns(aliasName string, maxIdleConns int) {
@@ -416,6 +420,7 @@ func SetMaxIdleConns(aliasName string, maxIdleConns int) {
 	al.SetMaxIdleConns(maxIdleConns)
 }
 
+// 设置最大连接数
 // SetMaxOpenConns Change the max open conns for *sql.DB, use specify database alias name
 // Deprecated you should not use this, we will remove it in the future
 func SetMaxOpenConns(aliasName string, maxOpenConns int) {
@@ -487,6 +492,9 @@ end:
 	return err
 }
 
+/*
+注册驱 根据目标数据库选择相应的类型
+*/
 // RegisterDriver Register a database driver use specify driver name, this can be definition the driver is which database type.
 func RegisterDriver(driverName string, typ DriverType) error {
 	if t, ok := drivers[driverName]; !ok {
