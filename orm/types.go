@@ -546,23 +546,34 @@ type txEnder interface {
 	Rollback() error
 }
 
+/*
+封装好所有的方法
+*/
 // base database struct
 type dbBaser interface {
+	// Read 默认通过查询主键赋值，可以使用指定的字段进行查询
 	Read(dbQuerier, *modelInfo, reflect.Value, *time.Location, []string, bool) error
+	// ReadBatch 批量读取
 	ReadBatch(dbQuerier, *querySet, *modelInfo, *Condition, interface{}, *time.Location, []string) (int64, error)
+	// Count total总数
 	Count(dbQuerier, *querySet, *modelInfo, *Condition, *time.Location) (int64, error)
+	// ReadValues 读取值
 	ReadValues(dbQuerier, *querySet, *modelInfo, *Condition, []string, interface{}, *time.Location) (int64, error)
-
+	// 插入
 	Insert(dbQuerier, *modelInfo, reflect.Value, *time.Location) (int64, error)
+	// 写入或者更新
 	InsertOrUpdate(dbQuerier, *modelInfo, reflect.Value, *alias, ...string) (int64, error)
+	// 批量插入
 	InsertMulti(dbQuerier, *modelInfo, reflect.Value, int, *time.Location) (int64, error)
 	InsertValue(dbQuerier, *modelInfo, bool, []string, []interface{}) (int64, error)
 	InsertStmt(stmtQuerier, *modelInfo, reflect.Value, *time.Location) (int64, error)
-
+	// 更新
 	Update(dbQuerier, *modelInfo, reflect.Value, *time.Location, []string) (int64, error)
+	// 批量更新
 	UpdateBatch(dbQuerier, *querySet, *modelInfo, *Condition, Params, *time.Location) (int64, error)
-
+	// 删除
 	Delete(dbQuerier, *modelInfo, reflect.Value, *time.Location, []string) (int64, error)
+	// 批量删除
 	DeleteBatch(dbQuerier, *querySet, *modelInfo, *Condition, *time.Location) (int64, error)
 
 	SupportUpdateJoin() bool

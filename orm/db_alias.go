@@ -267,17 +267,20 @@ func (t *TxDB) QueryRowContext(ctx context.Context, query string, args ...interf
 	return t.tx.QueryRowContext(ctx, query, args...)
 }
 
+/*
+定义一个struct
+*/
 type alias struct {
-	Name            string
-	Driver          DriverType
-	DriverName      string
-	DataSource      string
-	MaxIdleConns    int
-	MaxOpenConns    int
-	ConnMaxLifetime time.Duration
-	StmtCacheSize   int
-	DB              *DB
-	DbBaser         dbBaser
+	Name            string        // 连接池名
+	Driver          DriverType    // 选择的驱动
+	DriverName      string        // 驱动名称
+	DataSource      string        // 数据库连接配置
+	MaxIdleConns    int           // 最大空闲数
+	MaxOpenConns    int           // 最大连接数
+	ConnMaxLifetime time.Duration // 设置连接可重用的最大时间长度
+	StmtCacheSize   int           // statement 最大缓存数
+	DB              *DB           // 连接池
+	DbBaser         dbBaser       // 数据库操作方法
 	TZ              *time.Location
 	Engine          string
 }
@@ -293,6 +296,7 @@ func detectTZ(al *alias) {
 
 	switch al.Driver {
 	case DRMySQL:
+		// 时差计算
 		row := al.DB.QueryRow("SELECT TIMEDIFF(NOW(), UTC_TIMESTAMP)")
 		var tz string
 		row.Scan(&tz)
@@ -310,7 +314,7 @@ func detectTZ(al *alias) {
 			}
 		}
 
-		// get default engine from current database
+		// get default engine from current database 例如：InnoDB，MyISAM，MEMORY，Archive
 		row = al.DB.QueryRow("SELECT ENGINE, TRANSACTIONS FROM information_schema.engines WHERE SUPPORT = 'DEFAULT'")
 		var engine string
 		var tx bool
@@ -339,7 +343,9 @@ func detectTZ(al *alias) {
 }
 
 func addAliasWthDB(aliasName, driverName string, db *sql.DB, params ...DBOption) (*alias, error) {
+	// 先声明一个错误
 	existErr := fmt.Errorf("DataBase alias name `%s` already registered, cannot reuse", aliasName)
+	// 判断是否已经有相同命名的连接
 	if _, ok := dataBaseCache.get(aliasName); ok {
 		return nil, existErr
 	}
@@ -440,14 +446,20 @@ func AddAliasWthDB(aliasName, driverName string, db *sql.DB, params ...DBOption)
 	return err
 }
 
+/*
+设置数据库连接参数 及 使用数据库驱动
+driverName 驱动名称（mysql 等）
+dataSource 数据库连接参数
+*/
 // RegisterDataBase Setting the database connect params. Use the database driver self dataSource args.
 func RegisterDataBase(aliasName, driverName, dataSource string, params ...DBOption) error {
 	var (
 		err error
-		db  *sql.DB
+		db  *sql.DB // 数据库连接池
 		al  *alias
 	)
 
+	// 只调用一次，且不进行创建数据库连接，而只是进行调用PING()方法
 	db, err = sql.Open(driverName, dataSource)
 	if err != nil {
 		err = fmt.Errorf("register db `%s`, %s", aliasName, err.Error())
@@ -461,6 +473,9 @@ func RegisterDataBase(aliasName, driverName, dataSource string, params ...DBOpti
 
 	al.DataSource = dataSource
 
+	/*
+	   在连接失败的时候 将连接池关闭
+	*/
 end:
 	if err != nil {
 		if db != nil {
