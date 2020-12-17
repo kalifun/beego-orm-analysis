@@ -338,9 +338,10 @@ func (mc *_modelCache) register(prefixOrSuffixStr string, prefixOrSuffix bool, m
 	}
 
 	for _, model := range models {
-		val := reflect.ValueOf(model)
-		typ := reflect.Indirect(val).Type()
+		val := reflect.ValueOf(model)       //通过反射获取值信息
+		typ := reflect.Indirect(val).Type() // 获取结构体类型
 
+		// 如果不等指针类型 报错
 		if val.Kind() != reflect.Ptr {
 			err = fmt.Errorf("<orm.RegisterModel> cannot use non-ptr model struct `%s`", getFullName(typ))
 			return
@@ -353,6 +354,7 @@ func (mc *_modelCache) register(prefixOrSuffixStr string, prefixOrSuffix bool, m
 			return
 		}
 
+		// 获取表名
 		table := getTableName(val)
 
 		if prefixOrSuffixStr != "" {

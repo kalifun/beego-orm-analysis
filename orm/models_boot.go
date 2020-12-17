@@ -14,6 +14,7 @@
 
 package orm
 
+// 将我们已经声明好的模型进行注册
 // RegisterModel register models
 func RegisterModel(models ...interface{}) {
 	RegisterModelWithPrefix("", models...)
