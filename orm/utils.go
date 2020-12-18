@@ -231,6 +231,9 @@ func snakeStringWithAcronym(s string) string {
 	return strings.ToLower(string(data[:]))
 }
 
+/*
+将自定义的大驼峰更改成大写前加入_
+*/
 // snake string, XxYy to xx_yy , XxYY to xx_y_y
 func snakeString(s string) string {
 	data := make([]byte, 0, len(s)*2)
@@ -238,6 +241,7 @@ func snakeString(s string) string {
 	num := len(s)
 	for i := 0; i < num; i++ {
 		d := s[i]
+		// 当不是首字母时 判断是不是大写 如果是大写将'_'写入
 		if i > 0 && d >= 'A' && d <= 'Z' && j {
 			data = append(data, '_')
 		}
@@ -257,17 +261,26 @@ func SetNameStrategy(s string) {
 	nameStrategy = s
 }
 
+/*
+将xx_yy这种形式转化成XxYy
+*/
 // camel string, xx_yy to XxYy
 func camelString(s string) string {
 	data := make([]byte, 0, len(s))
+	// 由于开头都是小写 联系上下文 因此先定义为true
 	flag, num := true, len(s)-1
 	for i := 0; i <= num; i++ {
 		d := s[i]
 		if d == '_' {
+			// 当为'_'时设置为true
 			flag = true
 			continue
 		} else if flag {
+			// 当为true时说明是'_'后面的首字母或者字符的首字母 应将其更改为大写
 			if d >= 'a' && d <= 'z' {
+				// A～Z 65-90
+				// a~z  97-122
+				// 小写转大写相差32
 				d = d - 32
 			}
 			flag = false
