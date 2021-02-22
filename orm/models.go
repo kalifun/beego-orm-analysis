@@ -330,6 +330,9 @@ end:
 	return
 }
 
+/*
+注册model
+*/
 // register register models to model cache
 func (mc *_modelCache) register(prefixOrSuffixStr string, prefixOrSuffix bool, models ...interface{}) (err error) {
 	if mc.done {
@@ -349,6 +352,7 @@ func (mc *_modelCache) register(prefixOrSuffixStr string, prefixOrSuffix bool, m
 		// For this case:
 		// u := &User{}
 		// registerModel(&u)
+		// 如果对指针类型进行反射操作的话就必需, 先调用Elem()方法.
 		if typ.Kind() == reflect.Ptr {
 			err = fmt.Errorf("<orm.RegisterModel> only allow ptr model struct, it looks you use two reference to the struct `%s`", typ)
 			return

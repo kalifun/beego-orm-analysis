@@ -62,6 +62,7 @@ func addModelFields(mi *modelInfo, ind reflect.Value, mName string, index []int)
 			continue
 		}
 		// add anonymous struct fields
+		// 输出匿名字段结构
 		if sf.Anonymous {
 			addModelFields(mi, field, mName+"."+sf.Name, append(index, i))
 			continue
