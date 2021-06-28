@@ -17,8 +17,6 @@ package orm
 import (
 	"fmt"
 	"strings"
-
-	"github.com/beego/beego/v2/client/orm/hints"
 )
 
 // oracle operators.
@@ -33,24 +31,23 @@ var oracleOperators = map[string]string{
 
 // oracle column field types.
 var oracleTypes = map[string]string{
-	"pk":                  "NOT NULL PRIMARY KEY",
-	"bool":                "bool",
-	"string":              "VARCHAR2(%d)",
-	"string-char":         "CHAR(%d)",
-	"string-text":         "VARCHAR2(%d)",
-	"time.Time-date":      "DATE",
-	"time.Time":           "TIMESTAMP",
-	"int8":                "INTEGER",
-	"int16":               "INTEGER",
-	"int32":               "INTEGER",
-	"int64":               "INTEGER",
-	"uint8":               "INTEGER",
-	"uint16":              "INTEGER",
-	"uint32":              "INTEGER",
-	"uint64":              "INTEGER",
-	"float64":             "NUMBER",
-	"float64-decimal":     "NUMBER(%d, %d)",
-	"time.Time-precision": "TIMESTAMP(%d)",
+	"pk":              "NOT NULL PRIMARY KEY",
+	"bool":            "bool",
+	"string":          "VARCHAR2(%d)",
+	"string-char":     "CHAR(%d)",
+	"string-text":     "VARCHAR2(%d)",
+	"time.Time-date":  "DATE",
+	"time.Time":       "TIMESTAMP",
+	"int8":            "INTEGER",
+	"int16":           "INTEGER",
+	"int32":           "INTEGER",
+	"int64":           "INTEGER",
+	"uint8":           "INTEGER",
+	"uint16":          "INTEGER",
+	"uint32":          "INTEGER",
+	"uint64":          "INTEGER",
+	"float64":         "NUMBER",
+	"float64-decimal": "NUMBER(%d, %d)",
 }
 
 // oracle dbBaser
@@ -77,7 +74,7 @@ func (d *dbBaseOracle) DbTypes() map[string]string {
 	return oracleTypes
 }
 
-// ShowTablesQuery show all the tables in database
+//ShowTablesQuery show all the tables in database
 func (d *dbBaseOracle) ShowTablesQuery() string {
 	return "SELECT TABLE_NAME FROM USER_TABLES"
 }
@@ -97,29 +94,6 @@ func (d *dbBaseOracle) IndexExists(db dbQuerier, table string, name string) bool
 	var cnt int
 	row.Scan(&cnt)
 	return cnt > 0
-}
-
-func (d *dbBaseOracle) GenerateSpecifyIndex(tableName string, useIndex int, indexes []string) string {
-	var s []string
-	Q := d.TableQuote()
-	for _, index := range indexes {
-		tmp := fmt.Sprintf(`%s%s%s`, Q, index, Q)
-		s = append(s, tmp)
-	}
-
-	var hint string
-
-	switch useIndex {
-	case hints.KeyUseIndex, hints.KeyForceIndex:
-		hint = `INDEX`
-	case hints.KeyIgnoreIndex:
-		hint = `NO_INDEX`
-	default:
-		DebugLog.Println("[WARN] Not a valid specifying action, so that action is ignored")
-		return ``
-	}
-
-	return fmt.Sprintf(` /*+ %s(%s %s)*/ `, hint, tableName, strings.Join(s, `,`))
 }
 
 // execute insert sql with given struct and given values.
@@ -152,14 +126,7 @@ func (d *dbBaseOracle) InsertValue(q dbQuerier, mi *modelInfo, isMulti bool, nam
 			if isMulti {
 				return res.RowsAffected()
 			}
-
-			lastInsertId, err := res.LastInsertId()
-			if err != nil {
-				DebugLog.Println(ErrLastInsertIdUnavailable, ':', err)
-				return lastInsertId, ErrLastInsertIdUnavailable
-			} else {
-				return lastInsertId, nil
-			}
+			return res.LastInsertId()
 		}
 		return 0, err
 	}

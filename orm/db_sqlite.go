@@ -18,10 +18,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
-
-	"github.com/beego/beego/v2/client/orm/hints"
 )
 
 // sqlite operators.
@@ -44,25 +41,24 @@ var sqliteOperators = map[string]string{
 
 // sqlite column types.
 var sqliteTypes = map[string]string{
-	"auto":                "integer NOT NULL PRIMARY KEY AUTOINCREMENT",
-	"pk":                  "NOT NULL PRIMARY KEY",
-	"bool":                "bool",
-	"string":              "varchar(%d)",
-	"string-char":         "character(%d)",
-	"string-text":         "text",
-	"time.Time-date":      "date",
-	"time.Time":           "datetime",
-	"time.Time-precision": "datetime(%d)",
-	"int8":                "tinyint",
-	"int16":               "smallint",
-	"int32":               "integer",
-	"int64":               "bigint",
-	"uint8":               "tinyint unsigned",
-	"uint16":              "smallint unsigned",
-	"uint32":              "integer unsigned",
-	"uint64":              "bigint unsigned",
-	"float64":             "real",
-	"float64-decimal":     "decimal",
+	"auto":            "integer NOT NULL PRIMARY KEY AUTOINCREMENT",
+	"pk":              "NOT NULL PRIMARY KEY",
+	"bool":            "bool",
+	"string":          "varchar(%d)",
+	"string-char":     "character(%d)",
+	"string-text":     "text",
+	"time.Time-date":  "date",
+	"time.Time":       "datetime",
+	"int8":            "tinyint",
+	"int16":           "smallint",
+	"int32":           "integer",
+	"int64":           "bigint",
+	"uint8":           "tinyint unsigned",
+	"uint16":          "smallint unsigned",
+	"uint32":          "integer unsigned",
+	"uint64":          "bigint unsigned",
+	"float64":         "real",
+	"float64-decimal": "decimal",
 }
 
 // sqlite dbBaser.
@@ -155,24 +151,6 @@ func (d *dbBaseSqlite) IndexExists(db dbQuerier, table string, name string) bool
 		}
 	}
 	return false
-}
-
-// GenerateSpecifyIndex return a specifying index clause
-func (d *dbBaseSqlite) GenerateSpecifyIndex(tableName string, useIndex int, indexes []string) string {
-	var s []string
-	Q := d.TableQuote()
-	for _, index := range indexes {
-		tmp := fmt.Sprintf(`%s%s%s`, Q, index, Q)
-		s = append(s, tmp)
-	}
-
-	switch useIndex {
-	case hints.KeyUseIndex, hints.KeyForceIndex:
-		return fmt.Sprintf(` INDEXED BY %s `, strings.Join(s, `,`))
-	default:
-		DebugLog.Println("[WARN] Not a valid specifying action, so that action is ignored")
-		return ``
-	}
 }
 
 // create new sqlite dbBaser.

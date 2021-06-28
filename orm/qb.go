@@ -52,7 +52,7 @@ func NewQueryBuilder(driver string) (qb QueryBuilder, err error) {
 	} else if driver == "tidb" {
 		qb = new(TiDBQueryBuilder)
 	} else if driver == "postgres" {
-		qb = new(PostgresQueryBuilder)
+		err = errors.New("postgres query builder is not supported yet")
 	} else if driver == "sqlite" {
 		err = errors.New("sqlite query builder is not supported yet")
 	} else {

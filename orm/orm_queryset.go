@@ -17,8 +17,6 @@ package orm
 import (
 	"context"
 	"fmt"
-
-	"github.com/beego/beego/v2/client/orm/hints"
 )
 
 type colValue struct {
@@ -73,10 +71,8 @@ type querySet struct {
 	groups     []string
 	orders     []string
 	distinct   bool
-	forUpdate  bool
-	useIndex   int
-	indexes    []string
-	orm        *ormBase
+	forupdate  bool
+	orm        *orm
 	ctx        context.Context
 	forContext bool
 }
@@ -152,28 +148,7 @@ func (o querySet) Distinct() QuerySeter {
 
 // add FOR UPDATE to SELECT
 func (o querySet) ForUpdate() QuerySeter {
-	o.forUpdate = true
-	return &o
-}
-
-// ForceIndex force index for query
-func (o querySet) ForceIndex(indexes ...string) QuerySeter {
-	o.useIndex = hints.KeyForceIndex
-	o.indexes = indexes
-	return &o
-}
-
-// UseIndex use index for query
-func (o querySet) UseIndex(indexes ...string) QuerySeter {
-	o.useIndex = hints.KeyUseIndex
-	o.indexes = indexes
-	return &o
-}
-
-// IgnoreIndex ignore index for query
-func (o querySet) IgnoreIndex(indexes ...string) QuerySeter {
-	o.useIndex = hints.KeyIgnoreIndex
-	o.indexes = indexes
+	o.forupdate = true
 	return &o
 }
 
@@ -317,7 +292,7 @@ func (o querySet) WithContext(ctx context.Context) QuerySeter {
 }
 
 // create new QuerySeter.
-func newQuerySet(orm *ormBase, mi *modelInfo) QuerySeter {
+func newQuerySet(orm *orm, mi *modelInfo) QuerySeter {
 	o := new(querySet)
 	o.mi = mi
 	o.orm = orm

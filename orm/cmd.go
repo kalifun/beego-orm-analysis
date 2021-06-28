@@ -46,7 +46,7 @@ func printHelp(errs ...string) {
 	os.Exit(2)
 }
 
-// RunCommand listens for orm command and runs if command arguments have been passed.
+// RunCommand listen for orm command and then run it if command arguments passed.
 func RunCommand() {
 	if len(os.Args) < 2 || os.Args[1] != "orm" {
 		return
@@ -83,7 +83,7 @@ type commandSyncDb struct {
 	rtOnError bool
 }
 
-// Parse the orm command line arguments.
+// parse orm command line arguments.
 func (d *commandSyncDb) Parse(args []string) {
 	var name string
 
@@ -96,20 +96,16 @@ func (d *commandSyncDb) Parse(args []string) {
 	d.al = getDbAlias(name)
 }
 
-// Run orm line command.
+// run orm line command.
 func (d *commandSyncDb) Run() error {
 	var drops []string
-	var err error
 	if d.force {
-		drops, err = modelCache.getDbDropSQL(d.al)
-		if err != nil {
-			return err
-		}
+		drops = getDbDropSQL(d.al)
 	}
 
 	db := d.al.DB
 
-	if d.force && len(drops) > 0 {
+	if d.force {
 		for i, mi := range modelCache.allOrdered() {
 			query := drops[i]
 			if !d.noInfo {
@@ -128,10 +124,7 @@ func (d *commandSyncDb) Run() error {
 		}
 	}
 
-	createQueries, indexes, err := modelCache.getDbCreateSQL(d.al)
-	if err != nil {
-		return err
-	}
+	sqls, indexes := getDbCreateSQL(d.al)
 
 	tables, err := d.al.DbBaser.GetTables(db)
 	if err != nil {
@@ -142,12 +135,6 @@ func (d *commandSyncDb) Run() error {
 	}
 
 	for i, mi := range modelCache.allOrdered() {
-
-		if !isApplicableTableForDB(mi.addrField, d.al.Name) {
-			fmt.Printf("table `%s` is not applicable to database '%s'\n", mi.table, d.al.Name)
-			continue
-		}
-
 		if tables[mi.table] {
 			if !d.noInfo {
 				fmt.Printf("table `%s` already exists, skip\n", mi.table)
@@ -214,7 +201,7 @@ func (d *commandSyncDb) Run() error {
 			fmt.Printf("create table `%s` \n", mi.table)
 		}
 
-		queries := []string{createQueries[i]}
+		queries := []string{sqls[i]}
 		for _, idx := range indexes[mi.table] {
 			queries = append(queries, idx.SQL)
 		}
@@ -245,7 +232,7 @@ type commandSQLAll struct {
 	al *alias
 }
 
-// Parse orm command line arguments.
+// parse orm command line arguments.
 func (d *commandSQLAll) Parse(args []string) {
 	var name string
 
@@ -256,15 +243,12 @@ func (d *commandSQLAll) Parse(args []string) {
 	d.al = getDbAlias(name)
 }
 
-// Run orm line command.
+// run orm line command.
 func (d *commandSQLAll) Run() error {
-	createQueries, indexes, err := modelCache.getDbCreateSQL(d.al)
-	if err != nil {
-		return err
-	}
+	sqls, indexes := getDbCreateSQL(d.al)
 	var all []string
 	for i, mi := range modelCache.allOrdered() {
-		queries := []string{createQueries[i]}
+		queries := []string{sqls[i]}
 		for _, idx := range indexes[mi.table] {
 			queries = append(queries, idx.SQL)
 		}
@@ -282,9 +266,9 @@ func init() {
 }
 
 // RunSyncdb run syncdb command line.
-// name: Table's alias name (default is "default")
-// force: Run the next sql command even if the current gave an error
-// verbose: Print all information, useful for debugging
+// name means table's alias name. default is "default".
+// force means run next sql if the current is error.
+// verbose means show all info when running command or not.
 func RunSyncdb(name string, force bool, verbose bool) error {
 	BootStrap()
 

@@ -19,66 +19,7 @@ import (
 	"database/sql"
 	"reflect"
 	"time"
-
-	"github.com/beego/beego/v2/core/utils"
 )
-
-// TableNaming is usually used by model
-// when you custom your table name, please implement this interfaces
-// for example:
-// type User struct {
-//   ...
-// }
-// func (u *User) TableName() string {
-//    return "USER_TABLE"
-// }
-type TableNameI interface {
-	TableName() string
-}
-
-// TableEngineI is usually used by model
-// when you want to use specific engine, like myisam, you can implement this interface
-// for example:
-// type User struct {
-//   ...
-// }
-// func (u *User) TableEngine() string {
-//    return "myisam"
-// }
-type TableEngineI interface {
-	TableEngine() string
-}
-
-// TableIndexI is usually used by model
-// when you want to create indexes, you can implement this interface
-// for example:
-// type User struct {
-//   ...
-// }
-// func (u *User) TableIndex() [][]string {
-//    return [][]string{{"Name"}}
-// }
-type TableIndexI interface {
-	TableIndex() [][]string
-}
-
-// TableUniqueI is usually used by model
-// when you want to create unique indexes, you can implement this interface
-// for example:
-// type User struct {
-//   ...
-// }
-// func (u *User) TableUnique() [][]string {
-//    return [][]string{{"Email"}}
-// }
-type TableUniqueI interface {
-	TableUnique() [][]string
-}
-
-// IsApplicableTableForDB if return false, we won't create table to this db
-type IsApplicableTableForDB interface {
-	IsApplicableTableForDB(db string) bool
-}
 
 // Driver define database driver
 type Driver interface {
@@ -94,43 +35,35 @@ type Fielder interface {
 	RawValue() interface{}
 }
 
-type TxBeginner interface {
-	// self control transaction
-	Begin() (TxOrmer, error)
-	BeginWithCtx(ctx context.Context) (TxOrmer, error)
-	BeginWithOpts(opts *sql.TxOptions) (TxOrmer, error)
-	BeginWithCtxAndOpts(ctx context.Context, opts *sql.TxOptions) (TxOrmer, error)
-
-	// closure control transaction
-	DoTx(task func(ctx context.Context, txOrm TxOrmer) error) error
-	DoTxWithCtx(ctx context.Context, task func(ctx context.Context, txOrm TxOrmer) error) error
-	DoTxWithOpts(opts *sql.TxOptions, task func(ctx context.Context, txOrm TxOrmer) error) error
-	DoTxWithCtxAndOpts(ctx context.Context, opts *sql.TxOptions, task func(ctx context.Context, txOrm TxOrmer) error) error
-}
-
-type TxCommitter interface {
-	Commit() error
-	Rollback() error
-}
-
-// Data Manipulation Language
-type DML interface {
+// Ormer define the orm interface
+type Ormer interface {
+	// read data to model
+	// for example:
+	//	this will find User by Id field
+	// 	u = &User{Id: user.Id}
+	// 	err = Ormer.Read(u)
+	//	this will find User by UserName field
+	// 	u = &User{UserName: "astaxie", Password: "pass"}
+	//	err = Ormer.Read(u, "UserName")
+	Read(md interface{}, cols ...string) error
+	// Like Read(), but with "FOR UPDATE" clause, useful in transaction.
+	// Some databases are not support this feature.
+	ReadForUpdate(md interface{}, cols ...string) error
+	// Try to read a row from the database, or insert one if it doesn't exist
+	ReadOrCreate(md interface{}, col1 string, cols ...string) (bool, int64, error)
 	// insert model data to database
 	// for example:
 	//  user := new(User)
 	//  id, err = Ormer.Insert(user)
 	//  user must be a pointer and Insert will set user's pk field
-	Insert(md interface{}) (int64, error)
-	InsertWithCtx(ctx context.Context, md interface{}) (int64, error)
+	Insert(interface{}) (int64, error)
 	// mysql:InsertOrUpdate(model) or InsertOrUpdate(model,"colu=colu+value")
 	// if colu type is integer : can use(+-*/), string : convert(colu,"value")
 	// postgres: InsertOrUpdate(model,"conflictColumnName") or InsertOrUpdate(model,"conflictColumnName","colu=colu+value")
 	// if colu type is integer : can use(+-*/), string : colu || "value"
 	InsertOrUpdate(md interface{}, colConflitAndArgs ...string) (int64, error)
-	InsertOrUpdateWithCtx(ctx context.Context, md interface{}, colConflitAndArgs ...string) (int64, error)
 	// insert some models to database
 	InsertMulti(bulk int, mds interface{}) (int64, error)
-	InsertMultiWithCtx(ctx context.Context, bulk int, mds interface{}) (int64, error)
 	// update model to database.
 	// cols set the columns those want to update.
 	// find model by Id(pk) field and update columns specified by fields, if cols is null then update all columns
@@ -141,90 +74,61 @@ type DML interface {
 	//	user.Extra.Data = "orm"
 	//	num, err = Ormer.Update(&user, "Langs", "Extra")
 	Update(md interface{}, cols ...string) (int64, error)
-	UpdateWithCtx(ctx context.Context, md interface{}, cols ...string) (int64, error)
 	// delete model in database
 	Delete(md interface{}, cols ...string) (int64, error)
-	DeleteWithCtx(ctx context.Context, md interface{}, cols ...string) (int64, error)
-
-	// return a raw query seter for raw sql string.
-	// for example:
-	//	 ormer.Raw("UPDATE `user` SET `user_name` = ? WHERE `user_name` = ?", "slene", "testing").Exec()
-	//	// update user testing's name to slene
-	Raw(query string, args ...interface{}) RawSeter
-	RawWithCtx(ctx context.Context, query string, args ...interface{}) RawSeter
-}
-
-// Data Query Language
-type DQL interface {
-	// read data to model
-	// for example:
-	//	this will find User by Id field
-	// 	u = &User{Id: user.Id}
-	// 	err = Ormer.Read(u)
-	//	this will find User by UserName field
-	// 	u = &User{UserName: "astaxie", Password: "pass"}
-	//	err = Ormer.Read(u, "UserName")
-	Read(md interface{}, cols ...string) error
-	ReadWithCtx(ctx context.Context, md interface{}, cols ...string) error
-
-	// Like Read(), but with "FOR UPDATE" clause, useful in transaction.
-	// Some databases are not support this feature.
-	ReadForUpdate(md interface{}, cols ...string) error
-	ReadForUpdateWithCtx(ctx context.Context, md interface{}, cols ...string) error
-
-	// Try to read a row from the database, or insert one if it doesn't exist
-	ReadOrCreate(md interface{}, col1 string, cols ...string) (bool, int64, error)
-	ReadOrCreateWithCtx(ctx context.Context, md interface{}, col1 string, cols ...string) (bool, int64, error)
-
 	// load related models to md model.
 	// args are limit, offset int and order string.
 	//
 	// example:
 	// 	Ormer.LoadRelated(post,"Tags")
 	// 	for _,tag := range post.Tags{...}
-	// hints.DefaultRelDepth useDefaultRelsDepth ; or depth 0
-	// hints.RelDepth loadRelationDepth
-	// hints.Limit limit default limit 1000
-	// hints.Offset int offset default offset 0
-	// hints.OrderBy string order  for example : "-Id"
+	//args[0] bool true useDefaultRelsDepth ; false  depth 0
+	//args[0] int  loadRelationDepth
+	//args[1] int limit default limit 1000
+	//args[2] int offset default offset 0
+	//args[3] string order  for example : "-Id"
 	// make sure the relation is defined in model struct tags.
-	LoadRelated(md interface{}, name string, args ...utils.KV) (int64, error)
-	LoadRelatedWithCtx(ctx context.Context, md interface{}, name string, args ...utils.KV) (int64, error)
-
+	LoadRelated(md interface{}, name string, args ...interface{}) (int64, error)
 	// create a models to models queryer
 	// for example:
 	// 	post := Post{Id: 4}
 	// 	m2m := Ormer.QueryM2M(&post, "Tags")
 	QueryM2M(md interface{}, name string) QueryM2Mer
-	QueryM2MWithCtx(ctx context.Context, md interface{}, name string) QueryM2Mer
-
 	// return a QuerySeter for table operations.
 	// table name can be string or struct.
 	// e.g. QueryTable("user"), QueryTable(&user{}) or QueryTable((*User)(nil)),
 	QueryTable(ptrStructOrTableName interface{}) QuerySeter
-	QueryTableWithCtx(ctx context.Context, ptrStructOrTableName interface{}) QuerySeter
-
-	DBStats() *sql.DBStats
-}
-
-type DriverGetter interface {
+	// switch to another registered database driver by given name.
+	Using(name string) error
+	// begin transaction
+	// for example:
+	// 	o := NewOrm()
+	// 	err := o.Begin()
+	// 	...
+	// 	err = o.Rollback()
+	Begin() error
+	// begin transaction with provided context and option
+	// the provided context is used until the transaction is committed or rolled back.
+	// if the context is canceled, the transaction will be rolled back.
+	// the provided TxOptions is optional and may be nil if defaults should be used.
+	// if a non-default isolation level is used that the driver doesn't support, an error will be returned.
+	// for example:
+	//  o := NewOrm()
+	// 	err := o.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	//  ...
+	//  err = o.Rollback()
+	BeginTx(ctx context.Context, opts *sql.TxOptions) error
+	// commit transaction
+	Commit() error
+	// rollback transaction
+	Rollback() error
+	// return a raw query seter for raw sql string.
+	// for example:
+	//	 ormer.Raw("UPDATE `user` SET `user_name` = ? WHERE `user_name` = ?", "slene", "testing").Exec()
+	//	// update user testing's name to slene
+	Raw(query string, args ...interface{}) RawSeter
 	Driver() Driver
-}
-
-type ormer interface {
-	DQL
-	DML
-	DriverGetter
-}
-
-type Ormer interface {
-	ormer
-	TxBeginner
-}
-
-type TxOrmer interface {
-	ormer
-	TxCommitter
+	DBStats() *sql.DBStats
 }
 
 // Inserter insert prepared statement
@@ -289,21 +193,6 @@ type QuerySeter interface {
 	// for example:
 	//	qs.OrderBy("-status")
 	OrderBy(exprs ...string) QuerySeter
-	// add FORCE INDEX expression.
-	// for example:
-	//	qs.ForceIndex(`idx_name1`,`idx_name2`)
-	// ForceIndex, UseIndex , IgnoreIndex are mutually exclusive
-	ForceIndex(indexes ...string) QuerySeter
-	// add USE INDEX expression.
-	// for example:
-	//	qs.UseIndex(`idx_name1`,`idx_name2`)
-	// ForceIndex, UseIndex , IgnoreIndex are mutually exclusive
-	UseIndex(indexes ...string) QuerySeter
-	// add IGNORE INDEX expression.
-	// for example:
-	//	qs.IgnoreIndex(`idx_name1`,`idx_name2`)
-	// ForceIndex, UseIndex , IgnoreIndex are mutually exclusive
-	IgnoreIndex(indexes ...string) QuerySeter
 	// set relation model to query together.
 	// it will query relation models and assign to parent model.
 	// for example:
@@ -340,7 +229,7 @@ type QuerySeter interface {
 	//	}) // user slene's  name will change to slene2
 	Update(values Params) (int64, error)
 	// delete from table
-	// for example:
+	//for example:
 	//	num ,err = qs.Filter("user_name__in", "testing1", "testing2").Delete()
 	// 	//delete two user  who's name is testing1 or testing2
 	Delete() (int64, error)
@@ -425,8 +314,8 @@ type QueryM2Mer interface {
 	// remove models following the origin model relationship
 	// only delete rows from m2m table
 	// for example:
-	// tag3 := &Tag{Id:5,Name: "TestTag3"}
-	// num, err = m2m.Remove(tag3)
+	//tag3 := &Tag{Id:5,Name: "TestTag3"}
+	//num, err = m2m.Remove(tag3)
 	Remove(...interface{}) (int64, error)
 	// check model is existed in relationship of origin model
 	Exist(interface{}) bool
@@ -448,10 +337,10 @@ type RawPreparer interface {
 //  sql := fmt.Sprintf("SELECT %sid%s,%sname%s FROM %suser%s WHERE id = ?",Q,Q,Q,Q,Q,Q)
 //  rs := Ormer.Raw(sql, 1)
 type RawSeter interface {
-	// execute sql and get result
+	//execute sql and get result
 	Exec() (sql.Result, error)
-	// query data and map to container
-	// for example:
+	//query data and map to container
+	//for example:
 	//	var name string
 	//	var id int
 	//	rs.QueryRow(&id,&name) // id==2 name=="slene"
@@ -507,11 +396,11 @@ type RawSeter interface {
 type stmtQuerier interface {
 	Close() error
 	Exec(args ...interface{}) (sql.Result, error)
-	// ExecContext(ctx context.Context, args ...interface{}) (sql.Result, error)
+	//ExecContext(ctx context.Context, args ...interface{}) (sql.Result, error)
 	Query(args ...interface{}) (*sql.Rows, error)
-	// QueryContext(args ...interface{}) (*sql.Rows, error)
+	//QueryContext(args ...interface{}) (*sql.Rows, error)
 	QueryRow(args ...interface{}) *sql.Row
-	// QueryRowContext(ctx context.Context, args ...interface{}) *sql.Row
+	//QueryRowContext(ctx context.Context, args ...interface{}) *sql.Row
 }
 
 // db querier
@@ -546,41 +435,27 @@ type txEnder interface {
 	Rollback() error
 }
 
-/*
-封装好所有的方法
-*/
 // base database struct
 type dbBaser interface {
-	// Read 默认通过查询主键赋值，可以使用指定的字段进行查询
 	Read(dbQuerier, *modelInfo, reflect.Value, *time.Location, []string, bool) error
-	// ReadBatch 批量读取
-	ReadBatch(dbQuerier, *querySet, *modelInfo, *Condition, interface{}, *time.Location, []string) (int64, error)
-	// Count total总数
-	Count(dbQuerier, *querySet, *modelInfo, *Condition, *time.Location) (int64, error)
-	// ReadValues 读取值
-	ReadValues(dbQuerier, *querySet, *modelInfo, *Condition, []string, interface{}, *time.Location) (int64, error)
-	// 插入
 	Insert(dbQuerier, *modelInfo, reflect.Value, *time.Location) (int64, error)
-	// 写入或者更新
 	InsertOrUpdate(dbQuerier, *modelInfo, reflect.Value, *alias, ...string) (int64, error)
-	// 批量插入
 	InsertMulti(dbQuerier, *modelInfo, reflect.Value, int, *time.Location) (int64, error)
 	InsertValue(dbQuerier, *modelInfo, bool, []string, []interface{}) (int64, error)
 	InsertStmt(stmtQuerier, *modelInfo, reflect.Value, *time.Location) (int64, error)
-	// 更新
 	Update(dbQuerier, *modelInfo, reflect.Value, *time.Location, []string) (int64, error)
-	// 批量更新
-	UpdateBatch(dbQuerier, *querySet, *modelInfo, *Condition, Params, *time.Location) (int64, error)
-	// 删除
 	Delete(dbQuerier, *modelInfo, reflect.Value, *time.Location, []string) (int64, error)
-	// 批量删除
-	DeleteBatch(dbQuerier, *querySet, *modelInfo, *Condition, *time.Location) (int64, error)
-
+	ReadBatch(dbQuerier, *querySet, *modelInfo, *Condition, interface{}, *time.Location, []string) (int64, error)
 	SupportUpdateJoin() bool
+	UpdateBatch(dbQuerier, *querySet, *modelInfo, *Condition, Params, *time.Location) (int64, error)
+	DeleteBatch(dbQuerier, *querySet, *modelInfo, *Condition, *time.Location) (int64, error)
+	Count(dbQuerier, *querySet, *modelInfo, *Condition, *time.Location) (int64, error)
 	OperatorSQL(string) string
 	GenerateOperatorSQL(*modelInfo, *fieldInfo, string, []interface{}, *time.Location) (string, []interface{})
 	GenerateOperatorLeftCol(*fieldInfo, string, *string)
 	PrepareInsert(dbQuerier, *modelInfo) (stmtQuerier, string, error)
+	ReadValues(dbQuerier, *querySet, *modelInfo, *Condition, []string, interface{}, *time.Location) (int64, error)
+	RowsTo(dbQuerier, *querySet, *modelInfo, *Condition, interface{}, string, string, *time.Location) (int64, error)
 	MaxLimit() uint64
 	TableQuote() string
 	ReplaceMarks(*string)
@@ -595,6 +470,4 @@ type dbBaser interface {
 	IndexExists(dbQuerier, string, string) bool
 	collectFieldValue(*modelInfo, *fieldInfo, reflect.Value, bool, *time.Location) (interface{}, error)
 	setval(dbQuerier, *modelInfo, []string) error
-
-	GenerateSpecifyIndex(tableName string, useIndex int, indexes []string) string
 }

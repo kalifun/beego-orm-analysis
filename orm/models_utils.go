@@ -45,25 +45,26 @@ var supportTag = map[string]int{
 	"on_delete":    2,
 	"type":         2,
 	"description":  2,
-	"precision":    2,
 }
 
-// get reflect.Type name with package path.
+//  利用 reflect.Type 获取路径和名称
 func getFullName(typ reflect.Type) string {
 	return typ.PkgPath() + "." + typ.Name()
 }
 
-// getTableName get struct table name.
-// If the struct implement the TableName, then get the result as tablename
-// else use the struct name which will apply snakeString.
+// getTableName 获取 struct 表名.
+// 如果该结构实现了TableName，那么得到的结果就是Tablename
+// 否则使用结构名称，这将适用于snakeString。
 func getTableName(val reflect.Value) string {
+	// 获取用户是否定义了tableName方法
 	if fun := val.MethodByName("TableName"); fun.IsValid() {
 		vals := fun.Call([]reflect.Value{})
-		// has return and the first val is string
+		// 有返回，第一个值是字符串
 		if len(vals) > 0 && vals[0].Kind() == reflect.String {
 			return vals[0].String()
 		}
 	}
+	// 如果用户未定义，则获取 struct 的名称
 	return snakeString(reflect.Indirect(val).Type().Name())
 }
 
@@ -105,18 +106,6 @@ func getTableUnique(val reflect.Value) [][]string {
 		}
 	}
 	return nil
-}
-
-// get whether the table needs to be created for the database alias
-func isApplicableTableForDB(val reflect.Value, db string) bool {
-	fun := val.MethodByName("IsApplicableTableForDB")
-	if fun.IsValid() {
-		vals := fun.Call([]reflect.Value{reflect.ValueOf(db)})
-		if len(vals) > 0 && vals[0].Kind() == reflect.Bool {
-			return vals[0].Bool()
-		}
-	}
-	return true
 }
 
 // get snaked column name
@@ -215,7 +204,7 @@ func getFieldType(val reflect.Value) (ft int, err error) {
 	return
 }
 
-// parse struct tag string
+// 解析结构tag字符串
 func parseStructTag(data string) (attrs map[string]bool, tags map[string]string) {
 	attrs = make(map[string]bool)
 	tags = make(map[string]string)

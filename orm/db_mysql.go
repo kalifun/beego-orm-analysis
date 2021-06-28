@@ -22,11 +22,10 @@ import (
 
 // mysql operators.
 var mysqlOperators = map[string]string{
-	"exact":       "= ?",
-	"iexact":      "LIKE ?",
-	"strictexact": "= BINARY ?",
-	"contains":    "LIKE BINARY ?",
-	"icontains":   "LIKE ?",
+	"exact":     "= ?",
+	"iexact":    "LIKE ?",
+	"contains":  "LIKE BINARY ?",
+	"icontains": "LIKE ?",
 	// "regex":       "REGEXP BINARY ?",
 	// "iregex":      "REGEXP ?",
 	"gt":          "> ?",
@@ -43,25 +42,25 @@ var mysqlOperators = map[string]string{
 
 // mysql column field types.
 var mysqlTypes = map[string]string{
-	"auto":                "AUTO_INCREMENT NOT NULL PRIMARY KEY",
-	"pk":                  "NOT NULL PRIMARY KEY",
-	"bool":                "bool",
-	"string":              "varchar(%d)",
-	"string-char":         "char(%d)",
-	"string-text":         "longtext",
-	"time.Time-date":      "date",
-	"time.Time":           "datetime",
-	"int8":                "tinyint",
-	"int16":               "smallint",
-	"int32":               "integer",
-	"int64":               "bigint",
-	"uint8":               "tinyint unsigned",
-	"uint16":              "smallint unsigned",
-	"uint32":              "integer unsigned",
-	"uint64":              "bigint unsigned",
-	"float64":             "double precision",
-	"float64-decimal":     "numeric(%d, %d)",
-	"time.Time-precision": "datetime(%d)",
+	"auto":            "AUTO_INCREMENT NOT NULL PRIMARY KEY",
+	"pk":              "NOT NULL PRIMARY KEY",
+	"bool":            "bool",
+	"string":          "varchar(%d)",
+	"string-char":     "char(%d)",
+	"string-text":     "longtext",
+	"time.Time-date":  "date",
+	"time.Time":       "datetime",
+	"int8":            "tinyint",
+	"int16":           "smallint",
+	"int32":           "integer",
+	"int64":           "bigint",
+	"uint8":           "tinyint unsigned",
+	"uint16":          "smallint unsigned",
+	"uint32":          "integer unsigned",
+	"uint64":          "bigint unsigned",
+	"float64":         "double precision",
+	"float64-decimal": "numeric(%d, %d)",
+	"json":            "json",
 }
 
 // mysql dbBaser implementation.
@@ -111,7 +110,7 @@ func (d *dbBaseMysql) InsertOrUpdate(q dbQuerier, mi *modelInfo, ind reflect.Val
 
 	iouStr = "ON DUPLICATE KEY UPDATE"
 
-	// Get on the key-value pairs
+	//Get on the key-value pairs
 	for _, v := range args {
 		kv := strings.Split(v, "=")
 		if len(kv) == 2 {
@@ -155,7 +154,7 @@ func (d *dbBaseMysql) InsertOrUpdate(q dbQuerier, mi *modelInfo, ind reflect.Val
 	if isMulti {
 		qmarks = strings.Repeat(qmarks+"), (", multi-1) + qmarks
 	}
-	// conflitValue maybe is a int,can`t use fmt.Sprintf
+	//conflitValue maybe is a int,can`t use fmt.Sprintf
 	query := fmt.Sprintf("INSERT INTO %s%s%s (%s%s%s) VALUES (%s) %s "+qupdates, Q, mi.table, Q, Q, columns, Q, qmarks, iouStr)
 
 	d.ins.ReplaceMarks(&query)
@@ -166,14 +165,7 @@ func (d *dbBaseMysql) InsertOrUpdate(q dbQuerier, mi *modelInfo, ind reflect.Val
 			if isMulti {
 				return res.RowsAffected()
 			}
-
-			lastInsertId, err := res.LastInsertId()
-			if err != nil {
-				DebugLog.Println(ErrLastInsertIdUnavailable, ':', err)
-				return lastInsertId, ErrLastInsertIdUnavailable
-			} else {
-				return lastInsertId, nil
-			}
+			return res.LastInsertId()
 		}
 		return 0, err
 	}
@@ -184,7 +176,7 @@ func (d *dbBaseMysql) InsertOrUpdate(q dbQuerier, mi *modelInfo, ind reflect.Val
 	return id, err
 }
 
-// create new mysql dbBaser.
+//  创建新的mysql dbBaser
 func newdbBaseMysql() dbBaser {
 	b := new(dbBaseMysql)
 	b.ins = b

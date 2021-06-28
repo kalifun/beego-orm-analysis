@@ -76,13 +76,10 @@ func (c Condition) AndNot(expr string, args ...interface{}) *Condition {
 
 // AndCond combine a condition to current condition
 func (c *Condition) AndCond(cond *Condition) *Condition {
-
+	c = c.clone()
 	if c == cond {
 		panic(fmt.Errorf("<Condition.AndCond> cannot use self as sub cond"))
 	}
-
-	c = c.clone()
-
 	if cond != nil {
 		c.params = append(c.params, condValue{cond: cond, isCond: true})
 	}
@@ -152,8 +149,5 @@ func (c *Condition) IsEmpty() bool {
 
 // clone clone a condition
 func (c Condition) clone() *Condition {
-	params := make([]condValue, len(c.params))
-	copy(params, c.params)
-	c.params = params
 	return &c
 }

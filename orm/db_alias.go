@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -29,7 +30,7 @@ type DriverType int
 
 // Enum the Database driver
 const (
-	_          DriverType = iota // int enum type
+	_          DriverType = iota // 驱动类型枚举
 	DRMySQL                      // mysql
 	DRSqlite                     // sqlite
 	DROracle                     // oracle
@@ -63,7 +64,7 @@ var (
 		"tidb":     DRTiDB,
 		"oracle":   DROracle,
 		"oci8":     DROracle, // github.com/mattn/go-oci8
-		"ora":      DROracle, // https://github.com/rana/ora
+		"ora":      DROracle, //https://github.com/rana/ora
 	}
 	dbBasers = map[DriverType]dbBaser{
 		DRMySQL:    newdbBaseMysql(),
@@ -105,19 +106,13 @@ func (ac *_dbCache) getDefault() (al *alias) {
 	return
 }
 
+// 数据库类型
 type DB struct {
 	*sync.RWMutex
-	DB                  *sql.DB
-	stmtDecorators      *lru.Cache
-	stmtDecoratorsLimit int
+	DB             *sql.DB
+	stmtDecorators *lru.Cache
 }
 
-var _ dbQuerier = new(DB)
-var _ txer = new(DB)
-
-/*
-开启事务
-*/
 func (d *DB) Begin() (*sql.Tx, error) {
 	return d.DB.Begin()
 }
@@ -126,7 +121,7 @@ func (d *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) 
 	return d.DB.BeginTx(ctx, opts)
 }
 
-// su must call release to release *sql.Stmt after using
+//su must call release to release *sql.Stmt after using
 func (d *DB) getStmtDecorator(query string) (*stmtDecorator, error) {
 	d.RLock()
 	c, ok := d.stmtDecorators.Get(query)
@@ -167,14 +162,16 @@ func (d *DB) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error
 }
 
 func (d *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
-	return d.ExecContext(context.Background(), query, args...)
+	sd, err := d.getStmtDecorator(query)
+	if err != nil {
+		return nil, err
+	}
+	stmt := sd.getStmt()
+	defer sd.release()
+	return stmt.Exec(args...)
 }
 
 func (d *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	if d.stmtDecorators == nil {
-		return d.DB.ExecContext(ctx, query, args...)
-	}
-
 	sd, err := d.getStmtDecorator(query)
 	if err != nil {
 		return nil, err
@@ -185,14 +182,16 @@ func (d *DB) ExecContext(ctx context.Context, query string, args ...interface{})
 }
 
 func (d *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	return d.QueryContext(context.Background(), query, args...)
+	sd, err := d.getStmtDecorator(query)
+	if err != nil {
+		return nil, err
+	}
+	stmt := sd.getStmt()
+	defer sd.release()
+	return stmt.Query(args...)
 }
 
 func (d *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	if d.stmtDecorators == nil {
-		return d.DB.QueryContext(ctx, query, args...)
-	}
-
 	sd, err := d.getStmtDecorator(query)
 	if err != nil {
 		return nil, err
@@ -203,94 +202,44 @@ func (d *DB) QueryContext(ctx context.Context, query string, args ...interface{}
 }
 
 func (d *DB) QueryRow(query string, args ...interface{}) *sql.Row {
-	return d.QueryRowContext(context.Background(), query, args...)
-}
-
-func (d *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
-	if d.stmtDecorators == nil {
-		return d.DB.QueryRowContext(ctx, query, args...)
-	}
-
 	sd, err := d.getStmtDecorator(query)
 	if err != nil {
 		panic(err)
 	}
 	stmt := sd.getStmt()
 	defer sd.release()
-	return stmt.QueryRowContext(ctx, args...)
+	return stmt.QueryRow(args...)
+
 }
 
-type TxDB struct {
-	tx *sql.Tx
+func (d *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	sd, err := d.getStmtDecorator(query)
+	if err != nil {
+		panic(err)
+	}
+	stmt := sd.getStmt()
+	defer sd.release()
+	return stmt.QueryRowContext(ctx, args)
 }
 
-var _ dbQuerier = new(TxDB)
-var _ txEnder = new(TxDB)
-
-func (t *TxDB) Commit() error {
-	return t.tx.Commit()
-}
-
-func (t *TxDB) Rollback() error {
-	return t.tx.Rollback()
-}
-
-var _ dbQuerier = new(TxDB)
-var _ txEnder = new(TxDB)
-
-func (t *TxDB) Prepare(query string) (*sql.Stmt, error) {
-	return t.PrepareContext(context.Background(), query)
-}
-
-func (t *TxDB) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
-	return t.tx.PrepareContext(ctx, query)
-}
-
-func (t *TxDB) Exec(query string, args ...interface{}) (sql.Result, error) {
-	return t.ExecContext(context.Background(), query, args...)
-}
-
-func (t *TxDB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	return t.tx.ExecContext(ctx, query, args...)
-}
-
-func (t *TxDB) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	return t.QueryContext(context.Background(), query, args...)
-}
-
-func (t *TxDB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	return t.tx.QueryContext(ctx, query, args...)
-}
-
-func (t *TxDB) QueryRow(query string, args ...interface{}) *sql.Row {
-	return t.QueryRowContext(context.Background(), query, args...)
-}
-
-func (t *TxDB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
-	return t.tx.QueryRowContext(ctx, query, args...)
-}
-
-/*
-定义一个struct
-*/
+// 别名类型
 type alias struct {
-	Name            string        // 连接池名
-	Driver          DriverType    // 选择的驱动
-	DriverName      string        // 驱动名称
-	DataSource      string        // 数据库连接配置
-	MaxIdleConns    int           // 最大空闲数
-	MaxOpenConns    int           // 最大连接数
-	ConnMaxLifetime time.Duration // 设置连接可重用的最大时间长度
-	StmtCacheSize   int           // statement 最大缓存数
-	DB              *DB           // 连接池
-	DbBaser         dbBaser       // 数据库操作方法
-	TZ              *time.Location
-	Engine          string
+	Name         string     // 名称
+	Driver       DriverType // 驱动类型 例如：mysql
+	DriverName   string     // 驱动名称
+	DataSource   string     // 连接数据库语句
+	MaxIdleConns int        // 最大空闲连接数
+	MaxOpenConns int        // 最大连接数
+	DB           *DB
+	DbBaser      dbBaser
+	TZ           *time.Location
+	Engine       string
 }
 
+// 设置时区
 func detectTZ(al *alias) {
-	// orm timezone system match database
-	// default use Local
+	// ORM时区系统与数据库匹配
+	// 默认使用 Local
 	al.TZ = DefaultTimeLoc
 
 	if al.DriverName == "sphinx" {
@@ -299,7 +248,7 @@ func detectTZ(al *alias) {
 
 	switch al.Driver {
 	case DRMySQL:
-		// 时差计算
+		// mysql  获取世界标准时间
 		row := al.DB.QueryRow("SELECT TIMEDIFF(NOW(), UTC_TIMESTAMP)")
 		var tz string
 		row.Scan(&tz)
@@ -317,7 +266,7 @@ func detectTZ(al *alias) {
 			}
 		}
 
-		// get default engine from current database 例如：InnoDB，MyISAM，MEMORY，Archive
+		// 从当前数据库中获取默认引擎
 		row = al.DB.QueryRow("SELECT ENGINE, TRANSACTIONS FROM information_schema.engines WHERE SUPPORT = 'DEFAULT'")
 		var engine string
 		var tx bool
@@ -330,9 +279,11 @@ func detectTZ(al *alias) {
 		}
 
 	case DRSqlite, DROracle:
+		// sqlite oracle
 		al.TZ = time.UTC
 
 	case DRPostgres:
+		// postgresql
 		row := al.DB.QueryRow("SELECT current_setting('TIMEZONE')")
 		var tz string
 		row.Scan(&tz)
@@ -345,55 +296,17 @@ func detectTZ(al *alias) {
 	}
 }
 
-func addAliasWthDB(aliasName, driverName string, db *sql.DB, params ...DBOption) (*alias, error) {
-	// 先声明一个错误
-	existErr := fmt.Errorf("DataBase alias name `%s` already registered, cannot reuse", aliasName)
-	// 判断是否已经有相同命名的连接
-	if _, ok := dataBaseCache.get(aliasName); ok {
-		return nil, existErr
-	}
-
-	al, err := newAliasWithDb(aliasName, driverName, db, params...)
-	if err != nil {
-		return nil, err
-	}
-
-	if !dataBaseCache.add(aliasName, al) {
-		return nil, existErr
-	}
-
-	return al, nil
-}
-
-func newAliasWithDb(aliasName, driverName string, db *sql.DB, params ...DBOption) (*alias, error) {
-
-	al := &alias{}
-	al.DB = &DB{
-		RWMutex: new(sync.RWMutex),
-		DB:      db,
-	}
-
-	for _, p := range params {
-		p(al)
-	}
-
-	var stmtCache *lru.Cache
-	var stmtCacheSize int
-
-	if al.StmtCacheSize > 0 {
-		_stmtCache, errC := newStmtDecoratorLruWithEvict(al.StmtCacheSize)
-		if errC != nil {
-			return nil, errC
-		} else {
-			stmtCache = _stmtCache
-			stmtCacheSize = al.StmtCacheSize
-		}
-	}
-
+func addAliasWthDB(aliasName, driverName string, db *sql.DB) (*alias, error) {
+	// 创建一个别名
+	al := new(alias)
 	al.Name = aliasName
 	al.DriverName = driverName
-	al.DB.stmtDecorators = stmtCache
-	al.DB.stmtDecoratorsLimit = stmtCacheSize
+
+	al.DB = &DB{
+		RWMutex:        new(sync.RWMutex),
+		DB:             db,
+		stmtDecorators: newStmtDecoratorLruWithEvict(),
+	}
 
 	if dr, ok := drivers[driverName]; ok {
 		al.DbBaser = dbBasers[dr]
@@ -402,85 +315,62 @@ func newAliasWithDb(aliasName, driverName string, db *sql.DB, params ...DBOption
 		return nil, fmt.Errorf("driver name `%s` have not registered", driverName)
 	}
 
+	// Ping验证与数据库的连接仍然有效，如果有必要，建立一个连接。
 	err := db.Ping()
 	if err != nil {
 		return nil, fmt.Errorf("register db Ping `%s`, %s", aliasName, err.Error())
 	}
 
-	detectTZ(al)
+	// 将别名写入缓存
+	if !dataBaseCache.add(aliasName, al) {
+		return nil, fmt.Errorf("DataBase alias name `%s` already registered, cannot reuse", aliasName)
+	}
 
 	return al, nil
 }
 
-// 设置最大空闲数
-// SetMaxIdleConns Change the max idle conns for *sql.DB, use specify database alias name
-// Deprecated you should not use this, we will remove it in the future
-func SetMaxIdleConns(aliasName string, maxIdleConns int) {
-	al := getDbAlias(aliasName)
-	al.SetMaxIdleConns(maxIdleConns)
-}
-
-// 设置最大连接数
-// SetMaxOpenConns Change the max open conns for *sql.DB, use specify database alias name
-// Deprecated you should not use this, we will remove it in the future
-func SetMaxOpenConns(aliasName string, maxOpenConns int) {
-	al := getDbAlias(aliasName)
-	al.SetMaxIdleConns(maxOpenConns)
-}
-
-// SetMaxIdleConns Change the max idle conns for *sql.DB, use specify database alias name
-func (al *alias) SetMaxIdleConns(maxIdleConns int) {
-	al.MaxIdleConns = maxIdleConns
-	al.DB.DB.SetMaxIdleConns(maxIdleConns)
-}
-
-// SetMaxOpenConns Change the max open conns for *sql.DB, use specify database alias name
-func (al *alias) SetMaxOpenConns(maxOpenConns int) {
-	al.MaxOpenConns = maxOpenConns
-	al.DB.DB.SetMaxOpenConns(maxOpenConns)
-}
-
-func (al *alias) SetConnMaxLifetime(lifeTime time.Duration) {
-	al.ConnMaxLifetime = lifeTime
-	al.DB.DB.SetConnMaxLifetime(lifeTime)
-}
-
-// AddAliasWthDB add a aliasName for the drivename
-func AddAliasWthDB(aliasName, driverName string, db *sql.DB, params ...DBOption) error {
-	_, err := addAliasWthDB(aliasName, driverName, db, params...)
+// AddAliasWthDB为drivename添加一个别名。
+func AddAliasWthDB(aliasName, driverName string, db *sql.DB) error {
+	_, err := addAliasWthDB(aliasName, driverName, db)
 	return err
 }
 
-/*
-设置数据库连接参数 及 使用数据库驱动
-driverName 驱动名称（mysql 等）
-dataSource 数据库连接参数
-*/
-// RegisterDataBase Setting the database connect params. Use the database driver self dataSource args.
-func RegisterDataBase(aliasName, driverName, dataSource string, params ...DBOption) error {
+// RegisterDataBase 设置数据库连接参数。使用数据库驱动程序自带的dataSource args。
+func RegisterDataBase(aliasName, driverName, dataSource string, params ...int) error {
 	var (
 		err error
-		db  *sql.DB // 数据库连接池
+		db  *sql.DB
 		al  *alias
 	)
-
-	// 只调用一次，且不进行创建数据库连接，而只是进行调用PING()方法
+	// Open可能只是验证其参数，而不创建与数据库的连接到数据库的连接
 	db, err = sql.Open(driverName, dataSource)
 	if err != nil {
 		err = fmt.Errorf("register db `%s`, %s", aliasName, err.Error())
 		goto end
 	}
 
-	al, err = addAliasWthDB(aliasName, driverName, db, params...)
+	// 返回一个别名对象
+	al, err = addAliasWthDB(aliasName, driverName, db)
 	if err != nil {
 		goto end
 	}
 
 	al.DataSource = dataSource
 
-	/*
-	   在连接失败的时候 将连接池关闭
-	*/
+	// 校准时间
+	detectTZ(al)
+
+	// 设置连接池
+	for i, v := range params {
+		switch i {
+		case 0:
+			SetMaxIdleConns(al.Name, v)
+		case 1:
+			SetMaxOpenConns(al.Name, v)
+		}
+	}
+
+	// 出现异常时都执行这个 主要是关闭数据库连接
 end:
 	if err != nil {
 		if db != nil {
@@ -492,10 +382,7 @@ end:
 	return err
 }
 
-/*
-注册驱 根据目标数据库选择相应的类型
-*/
-// RegisterDriver Register a database driver use specify driver name, this can be definition the driver is which database type.
+// RegisterDriver 注册一个数据库驱动程序，使用指定的驱动程序名称，这可以定义该驱动程序是哪个数据库类型。
 func RegisterDriver(driverName string, typ DriverType) error {
 	if t, ok := drivers[driverName]; !ok {
 		drivers[driverName] = typ
@@ -517,6 +404,25 @@ func SetDataBaseTZ(aliasName string, tz *time.Location) error {
 	return nil
 }
 
+// SetMaxIdleConns 改变*sql.DB的最大空闲连接，使用指定的数据库别名
+func SetMaxIdleConns(aliasName string, maxIdleConns int) {
+	// 获取别名对象
+	al := getDbAlias(aliasName)
+	al.MaxIdleConns = maxIdleConns
+	al.DB.DB.SetMaxIdleConns(maxIdleConns)
+}
+
+// SetMaxOpenConns 改变*sql.DB的最大开放连接，使用指定的数据库别名
+func SetMaxOpenConns(aliasName string, maxOpenConns int) {
+	al := getDbAlias(aliasName)
+	al.MaxOpenConns = maxOpenConns
+	al.DB.DB.SetMaxOpenConns(maxOpenConns)
+	// TODO 原因 for tip go 1.2
+	if fun := reflect.ValueOf(al.DB).MethodByName("SetMaxOpenConns"); fun.IsValid() {
+		fun.Call([]reflect.Value{reflect.ValueOf(maxOpenConns)})
+	}
+}
+
 // GetDB Get *sql.DB from registered database by db alias name.
 // Use "default" as alias name if you not set.
 func GetDB(aliasNames ...string) (*sql.DB, error) {
@@ -534,27 +440,25 @@ func GetDB(aliasNames ...string) (*sql.DB, error) {
 }
 
 type stmtDecorator struct {
-	wg   sync.WaitGroup
-	stmt *sql.Stmt
+	wg      sync.WaitGroup
+	lastUse int64
+	stmt    *sql.Stmt
 }
 
 func (s *stmtDecorator) getStmt() *sql.Stmt {
 	return s.stmt
 }
 
-// acquire will add one
-// since this method will be used inside read lock scope,
-// so we can not do more things here
-// we should think about refactor this
 func (s *stmtDecorator) acquire() {
 	s.wg.Add(1)
+	s.lastUse = time.Now().Unix()
 }
 
 func (s *stmtDecorator) release() {
 	s.wg.Done()
 }
 
-// garbage recycle for stmt
+//garbage recycle for stmt
 func (s *stmtDecorator) destroy() {
 	go func() {
 		s.wg.Wait()
@@ -564,46 +468,15 @@ func (s *stmtDecorator) destroy() {
 
 func newStmtDecorator(sqlStmt *sql.Stmt) *stmtDecorator {
 	return &stmtDecorator{
-		stmt: sqlStmt,
+		stmt:    sqlStmt,
+		lastUse: time.Now().Unix(),
 	}
 }
 
-func newStmtDecoratorLruWithEvict(cacheSize int) (*lru.Cache, error) {
-	cache, err := lru.NewWithEvict(cacheSize, func(key interface{}, value interface{}) {
+// 创建一个缓存对象
+func newStmtDecoratorLruWithEvict() *lru.Cache {
+	cache, _ := lru.NewWithEvict(1000, func(key interface{}, value interface{}) {
 		value.(*stmtDecorator).destroy()
 	})
-	if err != nil {
-		return nil, err
-	}
-	return cache, nil
-}
-
-type DBOption func(al *alias)
-
-// MaxIdleConnections return a hint about MaxIdleConnections
-func MaxIdleConnections(maxIdleConn int) DBOption {
-	return func(al *alias) {
-		al.SetMaxIdleConns(maxIdleConn)
-	}
-}
-
-// MaxOpenConnections return a hint about MaxOpenConnections
-func MaxOpenConnections(maxOpenConn int) DBOption {
-	return func(al *alias) {
-		al.SetMaxOpenConns(maxOpenConn)
-	}
-}
-
-// ConnMaxLifetime return a hint about ConnMaxLifetime
-func ConnMaxLifetime(v time.Duration) DBOption {
-	return func(al *alias) {
-		al.SetConnMaxLifetime(v)
-	}
-}
-
-// MaxStmtCacheSize return a hint about MaxStmtCacheSize
-func MaxStmtCacheSize(v int) DBOption {
-	return func(al *alias) {
-		al.StmtCacheSize = v
-	}
+	return cache
 }

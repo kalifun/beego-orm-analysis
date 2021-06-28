@@ -39,27 +39,26 @@ var postgresOperators = map[string]string{
 
 // postgresql column field types.
 var postgresTypes = map[string]string{
-	"auto":                "serial NOT NULL PRIMARY KEY",
-	"pk":                  "NOT NULL PRIMARY KEY",
-	"bool":                "bool",
-	"string":              "varchar(%d)",
-	"string-char":         "char(%d)",
-	"string-text":         "text",
-	"time.Time-date":      "date",
-	"time.Time":           "timestamp with time zone",
-	"int8":                `smallint CHECK("%COL%" >= -127 AND "%COL%" <= 128)`,
-	"int16":               "smallint",
-	"int32":               "integer",
-	"int64":               "bigint",
-	"uint8":               `smallint CHECK("%COL%" >= 0 AND "%COL%" <= 255)`,
-	"uint16":              `integer CHECK("%COL%" >= 0)`,
-	"uint32":              `bigint CHECK("%COL%" >= 0)`,
-	"uint64":              `bigint CHECK("%COL%" >= 0)`,
-	"float64":             "double precision",
-	"float64-decimal":     "numeric(%d, %d)",
-	"json":                "json",
-	"jsonb":               "jsonb",
-	"time.Time-precision": "timestamp(%d) with time zone",
+	"auto":            "serial NOT NULL PRIMARY KEY",
+	"pk":              "NOT NULL PRIMARY KEY",
+	"bool":            "bool",
+	"string":          "varchar(%d)",
+	"string-char":     "char(%d)",
+	"string-text":     "text",
+	"time.Time-date":  "date",
+	"time.Time":       "timestamp with time zone",
+	"int8":            `smallint CHECK("%COL%" >= -127 AND "%COL%" <= 128)`,
+	"int16":           "smallint",
+	"int32":           "integer",
+	"int64":           "bigint",
+	"uint8":           `smallint CHECK("%COL%" >= 0 AND "%COL%" <= 255)`,
+	"uint16":          `integer CHECK("%COL%" >= 0)`,
+	"uint32":          `bigint CHECK("%COL%" >= 0)`,
+	"uint64":          `bigint CHECK("%COL%" >= 0)`,
+	"float64":         "double precision",
+	"float64-decimal": "numeric(%d, %d)",
+	"json":            "json",
+	"jsonb":           "jsonb",
 }
 
 // postgresql dbBaser.
@@ -180,12 +179,6 @@ func (d *dbBasePostgres) IndexExists(db dbQuerier, table string, name string) bo
 	var cnt int
 	row.Scan(&cnt)
 	return cnt > 0
-}
-
-// GenerateSpecifyIndex return a specifying index clause
-func (d *dbBasePostgres) GenerateSpecifyIndex(tableName string, useIndex int, indexes []string) string {
-	DebugLog.Println("[WARN] Not support any specifying index action, so that action is ignored")
-	return ``
 }
 
 // create new postgresql dbBaser.

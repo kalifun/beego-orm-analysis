@@ -20,21 +20,22 @@ import (
 	"reflect"
 )
 
-// single model info
+// 单个模型信息
 type modelInfo struct {
-	pkg       string
-	name      string
-	fullName  string
-	table     string
-	model     interface{}
-	fields    *fields
-	manual    bool
-	addrField reflect.Value // store the original struct value
-	uniques   []string
-	isThrough bool
+	pkg        string // 包
+	name       string // 结构体名称
+	fullName   string // pkgpath + 结构体名称
+	table      string // 表名称
+	model      interface{}
+	fields     *fields
+	manual     bool
+	addrField  reflect.Value // 存储原始结构值
+	uniques    []string
+	isThrough  bool
+	expandName string // Expand the name
 }
 
-// new model info
+// 创建新的model信息
 func newModelInfo(val reflect.Value) (mi *modelInfo) {
 	mi = &modelInfo{}
 	mi.fields = newFields()
@@ -46,7 +47,7 @@ func newModelInfo(val reflect.Value) (mi *modelInfo) {
 	return
 }
 
-// index: FieldByIndex returns the nested field corresponding to index
+// index: FieldByIndex返回与索引对应的嵌套字段
 func addModelFields(mi *modelInfo, ind reflect.Value, mName string, index []int) {
 	var (
 		err error
@@ -57,12 +58,11 @@ func addModelFields(mi *modelInfo, ind reflect.Value, mName string, index []int)
 	for i := 0; i < ind.NumField(); i++ {
 		field := ind.Field(i)
 		sf = ind.Type().Field(i)
-		// if the field is unexported skip
+		// 如果该字段未被导出，则跳过
 		if sf.PkgPath != "" {
 			continue
 		}
-		// add anonymous struct fields
-		// 输出匿名字段结构
+		// 添加匿名结构字段
 		if sf.Anonymous {
 			addModelFields(mi, field, mName+"."+sf.Name, append(index, i))
 			continue
@@ -75,7 +75,7 @@ func addModelFields(mi *modelInfo, ind reflect.Value, mName string, index []int)
 		} else if err != nil {
 			break
 		}
-		// record current field index
+		//record current field index
 		fi.fieldIndex = append(fi.fieldIndex, index...)
 		fi.fieldIndex = append(fi.fieldIndex, i)
 		fi.mi = mi

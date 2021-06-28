@@ -53,24 +53,18 @@ func (e *SliceStringField) FieldType() int {
 }
 
 func (e *SliceStringField) SetRaw(value interface{}) error {
-	f := func(str string) {
-		if len(str) > 0 {
-			parts := strings.Split(str, ",")
+	switch d := value.(type) {
+	case []string:
+		e.Set(d)
+	case string:
+		if len(d) > 0 {
+			parts := strings.Split(d, ",")
 			v := make([]string, 0, len(parts))
 			for _, p := range parts {
 				v = append(v, strings.TrimSpace(p))
 			}
 			e.Set(v)
 		}
-	}
-
-	switch d := value.(type) {
-	case []string:
-		e.Set(d)
-	case string:
-		f(d)
-	case []byte:
-		f(string(d))
 	default:
 		return fmt.Errorf("<SliceStringField.SetRaw> unknown value `%v`", value)
 	}
@@ -102,8 +96,6 @@ func (e *JSONFieldTest) SetRaw(value interface{}) error {
 	switch d := value.(type) {
 	case string:
 		return json.Unmarshal([]byte(d), e)
-	case []byte:
-		return json.Unmarshal(d, e)
 	default:
 		return fmt.Errorf("<JSONField.SetRaw> unknown value `%v`", value)
 	}
@@ -143,56 +135,55 @@ type Data struct {
 }
 
 type DataNull struct {
-	ID                int             `orm:"column(id)"`
-	Boolean           bool            `orm:"null"`
-	Char              string          `orm:"null;size(50)"`
-	Text              string          `orm:"null;type(text)"`
-	JSON              string          `orm:"type(json);null"`
-	Jsonb             string          `orm:"type(jsonb);null"`
-	Time              time.Time       `orm:"null;type(time)"`
-	Date              time.Time       `orm:"null;type(date)"`
-	DateTime          time.Time       `orm:"null;column(datetime)"`
-	DateTimePrecision time.Time       `orm:"null;type(datetime);precision(4)"`
-	Byte              byte            `orm:"null"`
-	Rune              rune            `orm:"null"`
-	Int               int             `orm:"null"`
-	Int8              int8            `orm:"null"`
-	Int16             int16           `orm:"null"`
-	Int32             int32           `orm:"null"`
-	Int64             int64           `orm:"null"`
-	Uint              uint            `orm:"null"`
-	Uint8             uint8           `orm:"null"`
-	Uint16            uint16          `orm:"null"`
-	Uint32            uint32          `orm:"null"`
-	Uint64            uint64          `orm:"null"`
-	Float32           float32         `orm:"null"`
-	Float64           float64         `orm:"null"`
-	Decimal           float64         `orm:"digits(8);decimals(4);null"`
-	NullString        sql.NullString  `orm:"null"`
-	NullBool          sql.NullBool    `orm:"null"`
-	NullFloat64       sql.NullFloat64 `orm:"null"`
-	NullInt64         sql.NullInt64   `orm:"null"`
-	BooleanPtr        *bool           `orm:"null"`
-	CharPtr           *string         `orm:"null;size(50)"`
-	TextPtr           *string         `orm:"null;type(text)"`
-	BytePtr           *byte           `orm:"null"`
-	RunePtr           *rune           `orm:"null"`
-	IntPtr            *int            `orm:"null"`
-	Int8Ptr           *int8           `orm:"null"`
-	Int16Ptr          *int16          `orm:"null"`
-	Int32Ptr          *int32          `orm:"null"`
-	Int64Ptr          *int64          `orm:"null"`
-	UintPtr           *uint           `orm:"null"`
-	Uint8Ptr          *uint8          `orm:"null"`
-	Uint16Ptr         *uint16         `orm:"null"`
-	Uint32Ptr         *uint32         `orm:"null"`
-	Uint64Ptr         *uint64         `orm:"null"`
-	Float32Ptr        *float32        `orm:"null"`
-	Float64Ptr        *float64        `orm:"null"`
-	DecimalPtr        *float64        `orm:"digits(8);decimals(4);null"`
-	TimePtr           *time.Time      `orm:"null;type(time)"`
-	DatePtr           *time.Time      `orm:"null;type(date)"`
-	DateTimePtr       *time.Time      `orm:"null"`
+	ID          int             `orm:"column(id)"`
+	Boolean     bool            `orm:"null"`
+	Char        string          `orm:"null;size(50)"`
+	Text        string          `orm:"null;type(text)"`
+	JSON        string          `orm:"type(json);null"`
+	Jsonb       string          `orm:"type(jsonb);null"`
+	Time        time.Time       `orm:"null;type(time)"`
+	Date        time.Time       `orm:"null;type(date)"`
+	DateTime    time.Time       `orm:"null;column(datetime)"`
+	Byte        byte            `orm:"null"`
+	Rune        rune            `orm:"null"`
+	Int         int             `orm:"null"`
+	Int8        int8            `orm:"null"`
+	Int16       int16           `orm:"null"`
+	Int32       int32           `orm:"null"`
+	Int64       int64           `orm:"null"`
+	Uint        uint            `orm:"null"`
+	Uint8       uint8           `orm:"null"`
+	Uint16      uint16          `orm:"null"`
+	Uint32      uint32          `orm:"null"`
+	Uint64      uint64          `orm:"null"`
+	Float32     float32         `orm:"null"`
+	Float64     float64         `orm:"null"`
+	Decimal     float64         `orm:"digits(8);decimals(4);null"`
+	NullString  sql.NullString  `orm:"null"`
+	NullBool    sql.NullBool    `orm:"null"`
+	NullFloat64 sql.NullFloat64 `orm:"null"`
+	NullInt64   sql.NullInt64   `orm:"null"`
+	BooleanPtr  *bool           `orm:"null"`
+	CharPtr     *string         `orm:"null;size(50)"`
+	TextPtr     *string         `orm:"null;type(text)"`
+	BytePtr     *byte           `orm:"null"`
+	RunePtr     *rune           `orm:"null"`
+	IntPtr      *int            `orm:"null"`
+	Int8Ptr     *int8           `orm:"null"`
+	Int16Ptr    *int16          `orm:"null"`
+	Int32Ptr    *int32          `orm:"null"`
+	Int64Ptr    *int64          `orm:"null"`
+	UintPtr     *uint           `orm:"null"`
+	Uint8Ptr    *uint8          `orm:"null"`
+	Uint16Ptr   *uint16         `orm:"null"`
+	Uint32Ptr   *uint32         `orm:"null"`
+	Uint64Ptr   *uint64         `orm:"null"`
+	Float32Ptr  *float32        `orm:"null"`
+	Float64Ptr  *float64        `orm:"null"`
+	DecimalPtr  *float64        `orm:"digits(8);decimals(4);null"`
+	TimePtr     *time.Time      `orm:"null;type(time)"`
+	DatePtr     *time.Time      `orm:"null;type(date)"`
+	DateTimePtr *time.Time      `orm:"null"`
 }
 
 type String string
@@ -238,21 +229,6 @@ type DataCustom struct {
 type UserBig struct {
 	ID   uint64 `orm:"column(id)"`
 	Name string
-}
-
-type TM struct {
-	ID           int       `orm:"column(id)"`
-	TMPrecision1 time.Time `orm:"type(datetime);precision(3)"`
-	TMPrecision2 time.Time `orm:"auto_now_add;type(datetime);precision(4)"`
-}
-
-func (t *TM) TableName() string {
-	return "tm"
-}
-
-func NewTM() *TM {
-	obj := new(TM)
-	return obj
 }
 
 type User struct {
@@ -311,14 +287,13 @@ func NewProfile() *Profile {
 }
 
 type Post struct {
-	ID               int       `orm:"column(id)"`
-	User             *User     `orm:"rel(fk)"`
-	Title            string    `orm:"size(60)"`
-	Content          string    `orm:"type(text)"`
-	Created          time.Time `orm:"auto_now_add"`
-	Updated          time.Time `orm:"auto_now"`
-	UpdatedPrecision time.Time `orm:"auto_now;type(datetime);precision(4)"`
-	Tags             []*Tag    `orm:"rel(m2m);rel_through(github.com/beego/beego/v2/client/orm.PostTags)"`
+	ID      int       `orm:"column(id)"`
+	User    *User     `orm:"rel(fk)"`
+	Title   string    `orm:"size(60)"`
+	Content string    `orm:"type(text)"`
+	Created time.Time `orm:"auto_now_add"`
+	Updated time.Time `orm:"auto_now"`
+	Tags    []*Tag    `orm:"rel(m2m);rel_through(github.com/astaxie/beego/orm.PostTags)"`
 }
 
 func (u *Post) TableIndex() [][]string {
@@ -376,7 +351,7 @@ type Group struct {
 type Permission struct {
 	ID     int `orm:"column(id)"`
 	Name   string
-	Groups []*Group `orm:"rel(m2m);rel_through(github.com/beego/beego/v2/client/orm.GroupPermissions)"`
+	Groups []*Group `orm:"rel(m2m);rel_through(github.com/astaxie/beego/orm.GroupPermissions)"`
 }
 
 type GroupPermissions struct {
@@ -403,15 +378,6 @@ type InLine struct {
 	// Other Fields
 	Name  string `orm:"unique"`
 	Email string
-}
-
-type Index struct {
-	// Common Fields
-	Id int `orm:"column(id)"`
-
-	// Other Fields
-	F1 int `orm:"column(f1);index"`
-	F2 int `orm:"column(f2);index"`
 }
 
 func NewInLine() *InLine {
@@ -443,11 +409,6 @@ type UintPk struct {
 type PtrPk struct {
 	ID       *IntegerPk `orm:"pk;rel(one)"`
 	Positive bool
-}
-
-type StrPk struct {
-	Id    string `orm:"column(id);size(64);pk"`
-	Value string
 }
 
 var DBARGS = struct {
@@ -485,7 +446,7 @@ var (
 	
 	usage:
 	
-	go get -u github.com/beego/beego/v2/client/orm
+	go get -u github.com/astaxie/beego/orm
 	go get -u github.com/go-sql-driver/mysql
 	go get -u github.com/mattn/go-sqlite3
 	go get -u github.com/lib/pq
@@ -495,43 +456,38 @@ var (
 	mysql -u root -e 'create database orm_test;'
 	export ORM_DRIVER=mysql
 	export ORM_SOURCE="root:@/orm_test?charset=utf8"
-	go test -v github.com/beego/beego/v2/client/orm
+	go test -v github.com/astaxie/beego/orm
 	
 	
 	#### Sqlite3
 	export ORM_DRIVER=sqlite3
 	export ORM_SOURCE='file:memory_test?mode=memory'
-	go test -v github.com/beego/beego/v2/client/orm
+	go test -v github.com/astaxie/beego/orm
 	
 	
 	#### PostgreSQL
 	psql -c 'create database orm_test;' -U postgres
 	export ORM_DRIVER=postgres
 	export ORM_SOURCE="user=postgres dbname=orm_test sslmode=disable"
-	go test -v github.com/beego/beego/v2/client/orm
+	go test -v github.com/astaxie/beego/orm
 	
 	#### TiDB
 	export ORM_DRIVER=tidb
 	export ORM_SOURCE='memory://test/test'
-	go test -v github.com/beego/beego/v2/pgk/orm
+	go test -v github.com/astaxie/beego/orm
 	
 	`
 )
 
 func init() {
-	// Debug, _ = StrTo(DBARGS.Debug).Bool()
-	Debug = true
+	Debug, _ = StrTo(DBARGS.Debug).Bool()
 
 	if DBARGS.Driver == "" || DBARGS.Source == "" {
 		fmt.Println(helpinfo)
 		os.Exit(2)
 	}
 
-	err := RegisterDataBase("default", DBARGS.Driver, DBARGS.Source, MaxIdleConnections(20))
-
-	if err != nil {
-		panic(fmt.Sprintf("can not register database: %v", err))
-	}
+	RegisterDataBase("default", DBARGS.Driver, DBARGS.Source, 20)
 
 	alias := getDbAlias("default")
 	if alias.Driver == DRMySQL {

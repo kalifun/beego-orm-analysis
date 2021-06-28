@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"reflect"
 	"time"
-
-	"github.com/pkg/errors"
 )
 
 // raw sql string prepared statement
@@ -34,8 +32,7 @@ func (o *rawPrepare) Exec(args ...interface{}) (sql.Result, error) {
 	if o.closed {
 		return nil, ErrStmtClosed
 	}
-	flatParams := getFlatParams(nil, args, o.rs.orm.alias.TZ)
-	return o.stmt.Exec(flatParams...)
+	return o.stmt.Exec(args...)
 }
 
 func (o *rawPrepare) Close() error {
@@ -66,7 +63,7 @@ func newRawPreparer(rs *rawSet) (RawPreparer, error) {
 type rawSet struct {
 	query string
 	args  []interface{}
-	orm   *ormBase
+	orm   *orm
 }
 
 var _ RawSeter = new(rawSet)
@@ -330,8 +327,6 @@ func (o *rawSet) QueryRow(containers ...interface{}) error {
 		return err
 	}
 
-	structTagMap := make(map[reflect.StructTag]map[string]string)
-
 	defer rows.Close()
 
 	if rows.Next() {
@@ -373,50 +368,23 @@ func (o *rawSet) QueryRow(containers ...interface{}) error {
 							field.Set(mf)
 							field = mf.Elem().FieldByIndex(fi.relModelInfo.fields.pk.fieldIndex)
 						}
-						if fi.isFielder {
-							fd := field.Addr().Interface().(Fielder)
-							err := fd.SetRaw(value)
-							if err != nil {
-								return errors.Errorf("set raw error:%s", err)
-							}
-						} else {
-							o.setFieldValue(field, value)
-						}
+						o.setFieldValue(field, value)
 					}
 				}
 			} else {
-				// define recursive function
-				var recursiveSetField func(rv reflect.Value)
-				recursiveSetField = func(rv reflect.Value) {
-					for i := 0; i < rv.NumField(); i++ {
-						f := rv.Field(i)
-						fe := rv.Type().Field(i)
-
-						// check if the field is a Struct
-						// recursive the Struct type
-						if fe.Type.Kind() == reflect.Struct {
-							recursiveSetField(f)
-						}
-
-						// thanks @Gazeboxu.
-						tags := structTagMap[fe.Tag]
-						if tags == nil {
-							_, tags = parseStructTag(fe.Tag.Get(defaultStructTagName))
-							structTagMap[fe.Tag] = tags
-						}
-						var col string
-						if col = tags["column"]; col == "" {
-							col = nameStrategyMap[nameStrategy](fe.Name)
-						}
-						if v, ok := columnsMp[col]; ok {
-							value := reflect.ValueOf(v).Elem().Interface()
-							o.setFieldValue(f, value)
-						}
+				for i := 0; i < ind.NumField(); i++ {
+					f := ind.Field(i)
+					fe := ind.Type().Field(i)
+					_, tags := parseStructTag(fe.Tag.Get(defaultStructTagName))
+					var col string
+					if col = tags["column"]; col == "" {
+						col = nameStrategyMap[nameStrategy](fe.Name)
+					}
+					if v, ok := columnsMp[col]; ok {
+						value := reflect.ValueOf(v).Elem().Interface()
+						o.setFieldValue(f, value)
 					}
 				}
-
-				// init call the recursive function
-				recursiveSetField(ind)
 			}
 
 		} else {
@@ -541,15 +509,7 @@ func (o *rawSet) QueryRows(containers ...interface{}) (int64, error) {
 							field.Set(mf)
 							field = mf.Elem().FieldByIndex(fi.relModelInfo.fields.pk.fieldIndex)
 						}
-						if fi.isFielder {
-							fd := field.Addr().Interface().(Fielder)
-							err := fd.SetRaw(value)
-							if err != nil {
-								return 0, errors.Errorf("set raw error:%s", err)
-							}
-						} else {
-							o.setFieldValue(field, value)
-						}
+						o.setFieldValue(field, value)
 					}
 				}
 			} else {
@@ -898,7 +858,7 @@ func (o *rawSet) Prepare() (RawPreparer, error) {
 	return newRawPreparer(o)
 }
 
-func newRawSet(orm *ormBase, query string, args []interface{}) RawSeter {
+func newRawSet(orm *orm, query string, args []interface{}) RawSeter {
 	o := new(rawSet)
 	o.query = query
 	o.args = args

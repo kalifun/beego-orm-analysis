@@ -183,7 +183,16 @@ func (t *dbTables) getJoinSQL() (join string) {
 			t1 = jt.jtl.index
 		}
 		t2 = jt.index
-		table = jt.mi.table
+
+		//Determine if there is an extension
+		if jt.mi.expandName != "" {
+			// Determine the extension length
+			lenExpand := len(jt.mi.expandName)
+			newName := jt.mi.table[0 : len(jt.mi.table)-lenExpand]
+			table = newName + t.mi.expandName
+		} else {
+			table = jt.mi.table
+		}
 
 		switch {
 		case jt.fi.fieldType == RelManyToMany || jt.fi.fieldType == RelReverseMany || jt.fi.reverse && jt.fi.reverseFieldInfo.fieldType == RelManyToMany:
@@ -434,6 +443,9 @@ func (t *dbTables) getOrderSQL(orders []string) (orderSQL string) {
 		if order[0] == '-' {
 			asc = "DESC"
 			order = order[1:]
+		} else if order[0] == '+' {
+			asc = "IS NULL"
+			order = order[1:]
 		}
 		exprs := strings.Split(order, ExprSep)
 
@@ -470,15 +482,6 @@ func (t *dbTables) getLimitSQL(mi *modelInfo, offset int64, limit int64) (limits
 		limits = fmt.Sprintf("LIMIT %d OFFSET %d", limit, offset)
 	}
 	return
-}
-
-// getIndexSql generate index sql.
-func (t *dbTables) getIndexSql(tableName string, useIndex int, indexes []string) (clause string) {
-	if len(indexes) == 0 {
-		return
-	}
-
-	return t.base.GenerateSpecifyIndex(tableName, useIndex, indexes)
 }
 
 // crete new tables collection.

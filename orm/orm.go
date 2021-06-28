@@ -21,7 +21,7 @@
 //
 //	import (
 //		"fmt"
-//		"github.com/beego/beego/v2/client/orm"
+//		"github.com/astaxie/beego/orm"
 //		_ "github.com/go-sql-driver/mysql" // import your used driver
 //	)
 //
@@ -60,12 +60,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sync"
 	"time"
-
-	"github.com/beego/beego/v2/client/orm/hints"
-	"github.com/beego/beego/v2/core/utils"
-
-	"github.com/beego/beego/v2/core/logs"
 )
 
 // DebugQueries define the debug
@@ -80,14 +76,13 @@ var (
 	DefaultRowsLimit = -1
 	DefaultRelsDepth = 2
 	DefaultTimeLoc   = time.Local
-	ErrTxDone        = errors.New("<TxOrmer.Commit/Rollback> transaction already done")
+	ErrTxHasBegan    = errors.New("<Ormer.Begin> transaction already begin")
+	ErrTxDone        = errors.New("<Ormer.Commit/Rollback> transaction not begin")
 	ErrMultiRows     = errors.New("<QuerySeter> return multi rows")
 	ErrNoRows        = errors.New("<QuerySeter> no row found")
 	ErrStmtClosed    = errors.New("<QuerySeter> stmt already closed")
 	ErrArgs          = errors.New("<Ormer> args error may be empty")
 	ErrNotImplement  = errors.New("have not implement")
-
-	ErrLastInsertIdUnavailable = errors.New("<Ormer> last insert id is unavailable")
 )
 
 // Params stores the Params
@@ -96,17 +91,16 @@ type Params map[string]interface{}
 // ParamsList stores paramslist
 type ParamsList []interface{}
 
-type ormBase struct {
+type orm struct {
 	alias *alias
 	db    dbQuerier
+	isTx  bool
 }
 
-var _ DQL = new(ormBase)
-var _ DML = new(ormBase)
-var _ DriverGetter = new(ormBase)
+var _ Ormer = new(orm)
 
 // get model info and model reflect value
-func (o *ormBase) getMiInd(md interface{}, needPtr bool) (mi *modelInfo, ind reflect.Value) {
+func (o *orm) getMiInd(md interface{}, needPtr bool) (mi *modelInfo, ind reflect.Value) {
 	val := reflect.ValueOf(md)
 	ind = reflect.Indirect(val)
 	typ := ind.Type()
@@ -121,7 +115,7 @@ func (o *ormBase) getMiInd(md interface{}, needPtr bool) (mi *modelInfo, ind ref
 }
 
 // get field info from model info by given field name
-func (o *ormBase) getFieldInfo(mi *modelInfo, name string) *fieldInfo {
+func (o *orm) getFieldInfo(mi *modelInfo, name string) *fieldInfo {
 	fi, ok := mi.fields.GetByAny(name)
 	if !ok {
 		panic(fmt.Errorf("<Ormer> cannot find field `%s` for model `%s`", name, mi.fullName))
@@ -130,42 +124,33 @@ func (o *ormBase) getFieldInfo(mi *modelInfo, name string) *fieldInfo {
 }
 
 // read data to model
-func (o *ormBase) Read(md interface{}, cols ...string) error {
-	return o.ReadWithCtx(context.Background(), md, cols...)
-}
-func (o *ormBase) ReadWithCtx(ctx context.Context, md interface{}, cols ...string) error {
+func (o *orm) Read(md interface{}, cols ...string) error {
 	mi, ind := o.getMiInd(md, true)
 	return o.alias.DbBaser.Read(o.db, mi, ind, o.alias.TZ, cols, false)
 }
 
 // read data to model, like Read(), but use "SELECT FOR UPDATE" form
-func (o *ormBase) ReadForUpdate(md interface{}, cols ...string) error {
-	return o.ReadForUpdateWithCtx(context.Background(), md, cols...)
-}
-func (o *ormBase) ReadForUpdateWithCtx(ctx context.Context, md interface{}, cols ...string) error {
+func (o *orm) ReadForUpdate(md interface{}, cols ...string) error {
 	mi, ind := o.getMiInd(md, true)
 	return o.alias.DbBaser.Read(o.db, mi, ind, o.alias.TZ, cols, true)
 }
 
 // Try to read a row from the database, or insert one if it doesn't exist
-func (o *ormBase) ReadOrCreate(md interface{}, col1 string, cols ...string) (bool, int64, error) {
-	return o.ReadOrCreateWithCtx(context.Background(), md, col1, cols...)
-}
-func (o *ormBase) ReadOrCreateWithCtx(ctx context.Context, md interface{}, col1 string, cols ...string) (bool, int64, error) {
+func (o *orm) ReadOrCreate(md interface{}, col1 string, cols ...string) (bool, int64, error) {
 	cols = append([]string{col1}, cols...)
 	mi, ind := o.getMiInd(md, true)
 	err := o.alias.DbBaser.Read(o.db, mi, ind, o.alias.TZ, cols, false)
 	if err == ErrNoRows {
 		// Create
-		id, err := o.InsertWithCtx(ctx, md)
-		return err == nil, id, err
+		id, err := o.Insert(md)
+		return (err == nil), id, err
 	}
 
 	id, vid := int64(0), ind.FieldByIndex(mi.fields.pk.fieldIndex)
 	if mi.fields.pk.fieldType&IsPositiveIntegerField > 0 {
 		id = int64(vid.Uint())
 	} else if mi.fields.pk.rel {
-		return o.ReadOrCreateWithCtx(ctx, vid.Interface(), mi.fields.pk.relModelInfo.fields.pk.name)
+		return o.ReadOrCreate(vid.Interface(), mi.fields.pk.relModelInfo.fields.pk.name)
 	} else {
 		id = vid.Int()
 	}
@@ -174,10 +159,7 @@ func (o *ormBase) ReadOrCreateWithCtx(ctx context.Context, md interface{}, col1 
 }
 
 // insert model data to database
-func (o *ormBase) Insert(md interface{}) (int64, error) {
-	return o.InsertWithCtx(context.Background(), md)
-}
-func (o *ormBase) InsertWithCtx(ctx context.Context, md interface{}) (int64, error) {
+func (o *orm) Insert(md interface{}) (int64, error) {
 	mi, ind := o.getMiInd(md, true)
 	id, err := o.alias.DbBaser.Insert(o.db, mi, ind, o.alias.TZ)
 	if err != nil {
@@ -190,7 +172,7 @@ func (o *ormBase) InsertWithCtx(ctx context.Context, md interface{}) (int64, err
 }
 
 // set auto pk field
-func (o *ormBase) setPk(mi *modelInfo, ind reflect.Value, id int64) {
+func (o *orm) setPk(mi *modelInfo, ind reflect.Value, id int64) {
 	if mi.fields.pk.auto {
 		if mi.fields.pk.fieldType&IsPositiveIntegerField > 0 {
 			ind.FieldByIndex(mi.fields.pk.fieldIndex).SetUint(uint64(id))
@@ -201,10 +183,7 @@ func (o *ormBase) setPk(mi *modelInfo, ind reflect.Value, id int64) {
 }
 
 // insert some models to database
-func (o *ormBase) InsertMulti(bulk int, mds interface{}) (int64, error) {
-	return o.InsertMultiWithCtx(context.Background(), bulk, mds)
-}
-func (o *ormBase) InsertMultiWithCtx(ctx context.Context, bulk int, mds interface{}) (int64, error) {
+func (o *orm) InsertMulti(bulk int, mds interface{}) (int64, error) {
 	var cnt int64
 
 	sind := reflect.Indirect(reflect.ValueOf(mds))
@@ -239,10 +218,7 @@ func (o *ormBase) InsertMultiWithCtx(ctx context.Context, bulk int, mds interfac
 }
 
 // InsertOrUpdate data to database
-func (o *ormBase) InsertOrUpdate(md interface{}, colConflictAndArgs ...string) (int64, error) {
-	return o.InsertOrUpdateWithCtx(context.Background(), md, colConflictAndArgs...)
-}
-func (o *ormBase) InsertOrUpdateWithCtx(ctx context.Context, md interface{}, colConflitAndArgs ...string) (int64, error) {
+func (o *orm) InsertOrUpdate(md interface{}, colConflitAndArgs ...string) (int64, error) {
 	mi, ind := o.getMiInd(md, true)
 	id, err := o.alias.DbBaser.InsertOrUpdate(o.db, mi, ind, o.alias, colConflitAndArgs...)
 	if err != nil {
@@ -256,20 +232,14 @@ func (o *ormBase) InsertOrUpdateWithCtx(ctx context.Context, md interface{}, col
 
 // update model to database.
 // cols set the columns those want to update.
-func (o *ormBase) Update(md interface{}, cols ...string) (int64, error) {
-	return o.UpdateWithCtx(context.Background(), md, cols...)
-}
-func (o *ormBase) UpdateWithCtx(ctx context.Context, md interface{}, cols ...string) (int64, error) {
+func (o *orm) Update(md interface{}, cols ...string) (int64, error) {
 	mi, ind := o.getMiInd(md, true)
 	return o.alias.DbBaser.Update(o.db, mi, ind, o.alias.TZ, cols)
 }
 
 // delete model in database
 // cols shows the delete conditions values read from. default is pk
-func (o *ormBase) Delete(md interface{}, cols ...string) (int64, error) {
-	return o.DeleteWithCtx(context.Background(), md, cols...)
-}
-func (o *ormBase) DeleteWithCtx(ctx context.Context, md interface{}, cols ...string) (int64, error) {
+func (o *orm) Delete(md interface{}, cols ...string) (int64, error) {
 	mi, ind := o.getMiInd(md, true)
 	num, err := o.alias.DbBaser.Delete(o.db, mi, ind, o.alias.TZ, cols)
 	if err != nil {
@@ -282,10 +252,7 @@ func (o *ormBase) DeleteWithCtx(ctx context.Context, md interface{}, cols ...str
 }
 
 // create a models to models queryer
-func (o *ormBase) QueryM2M(md interface{}, name string) QueryM2Mer {
-	return o.QueryM2MWithCtx(context.Background(), md, name)
-}
-func (o *ormBase) QueryM2MWithCtx(ctx context.Context, md interface{}, name string) QueryM2Mer {
+func (o *orm) QueryM2M(md interface{}, name string) QueryM2Mer {
 	mi, ind := o.getMiInd(md, true)
 	fi := o.getFieldInfo(mi, name)
 
@@ -307,38 +274,32 @@ func (o *ormBase) QueryM2MWithCtx(ctx context.Context, md interface{}, name stri
 // 	for _,tag := range post.Tags{...}
 //
 // make sure the relation is defined in model struct tags.
-func (o *ormBase) LoadRelated(md interface{}, name string, args ...utils.KV) (int64, error) {
-	return o.LoadRelatedWithCtx(context.Background(), md, name, args...)
-}
-func (o *ormBase) LoadRelatedWithCtx(ctx context.Context, md interface{}, name string, args ...utils.KV) (int64, error) {
-	_, fi, ind, qs := o.queryRelated(md, name)
+func (o *orm) LoadRelated(md interface{}, name string, args ...interface{}) (int64, error) {
+	_, fi, ind, qseter := o.queryRelated(md, name)
+
+	qs := qseter.(*querySet)
 
 	var relDepth int
 	var limit, offset int64
 	var order string
-
-	kvs := utils.NewKVs(args...)
-	kvs.IfContains(hints.KeyRelDepth, func(value interface{}) {
-		if v, ok := value.(bool); ok {
-			if v {
-				relDepth = DefaultRelsDepth
+	for i, arg := range args {
+		switch i {
+		case 0:
+			if v, ok := arg.(bool); ok {
+				if v {
+					relDepth = DefaultRelsDepth
+				}
+			} else if v, ok := arg.(int); ok {
+				relDepth = v
 			}
-		} else if v, ok := value.(int); ok {
-			relDepth = v
+		case 1:
+			limit = ToInt64(arg)
+		case 2:
+			offset = ToInt64(arg)
+		case 3:
+			order, _ = arg.(string)
 		}
-	}).IfContains(hints.KeyLimit, func(value interface{}) {
-		if v, ok := value.(int64); ok {
-			limit = v
-		}
-	}).IfContains(hints.KeyOffset, func(value interface{}) {
-		if v, ok := value.(int64); ok {
-			offset = v
-		}
-	}).IfContains(hints.KeyOrderBy, func(value interface{}) {
-		if v, ok := value.(string); ok {
-			order = v
-		}
-	})
+	}
 
 	switch fi.fieldType {
 	case RelOneToOne, RelForeignKey, RelReverseOne:
@@ -374,8 +335,20 @@ func (o *ormBase) LoadRelatedWithCtx(ctx context.Context, md interface{}, name s
 	return nums, err
 }
 
+// return a QuerySeter for related models to md model.
+// it can do all, update, delete in QuerySeter.
+// example:
+// 	qs := orm.QueryRelated(post,"Tag")
+//  qs.All(&[]*Tag{})
+//
+func (o *orm) QueryRelated(md interface{}, name string) QuerySeter {
+	// is this api needed ?
+	_, _, _, qs := o.queryRelated(md, name)
+	return qs
+}
+
 // get QuerySeter for related models to md model
-func (o *ormBase) queryRelated(md interface{}, name string) (*modelInfo, *fieldInfo, reflect.Value, *querySet) {
+func (o *orm) queryRelated(md interface{}, name string) (*modelInfo, *fieldInfo, reflect.Value, QuerySeter) {
 	mi, ind := o.getMiInd(md, true)
 	fi := o.getFieldInfo(mi, name)
 
@@ -407,7 +380,7 @@ func (o *ormBase) queryRelated(md interface{}, name string) (*modelInfo, *fieldI
 }
 
 // get reverse relation QuerySeter
-func (o *ormBase) getReverseQs(md interface{}, mi *modelInfo, fi *fieldInfo) *querySet {
+func (o *orm) getReverseQs(md interface{}, mi *modelInfo, fi *fieldInfo) *querySet {
 	switch fi.fieldType {
 	case RelReverseOne, RelReverseMany:
 	default:
@@ -428,7 +401,7 @@ func (o *ormBase) getReverseQs(md interface{}, mi *modelInfo, fi *fieldInfo) *qu
 }
 
 // get relation QuerySeter
-func (o *ormBase) getRelQs(md interface{}, mi *modelInfo, fi *fieldInfo) *querySet {
+func (o *orm) getRelQs(md interface{}, mi *modelInfo, fi *fieldInfo) *querySet {
 	switch fi.fieldType {
 	case RelOneToOne, RelForeignKey, RelManyToMany:
 	default:
@@ -450,10 +423,7 @@ func (o *ormBase) getRelQs(md interface{}, mi *modelInfo, fi *fieldInfo) *queryS
 // return a QuerySeter for table operations.
 // table name can be string or struct.
 // e.g. QueryTable("user"), QueryTable(&user{}) or QueryTable((*User)(nil)),
-func (o *ormBase) QueryTable(ptrStructOrTableName interface{}) (qs QuerySeter) {
-	return o.QueryTableWithCtx(context.Background(), ptrStructOrTableName)
-}
-func (o *ormBase) QueryTableWithCtx(ctx context.Context, ptrStructOrTableName interface{}) (qs QuerySeter) {
+func (o *orm) QueryTable(ptrStructOrTableName interface{}) (qs QuerySeter) {
 	var name string
 	if table, ok := ptrStructOrTableName.(string); ok {
 		name = nameStrategyMap[defaultNameStrategy](table)
@@ -472,21 +442,89 @@ func (o *ormBase) QueryTableWithCtx(ctx context.Context, ptrStructOrTableName in
 	return
 }
 
-// return a raw query seter for raw sql string.
-func (o *ormBase) Raw(query string, args ...interface{}) RawSeter {
-	return o.RawWithCtx(context.Background(), query, args...)
+// switch to another registered database driver by given name.
+func (o *orm) Using(name string) error {
+	if o.isTx {
+		panic(fmt.Errorf("<Ormer.Using> transaction has been start, cannot change db"))
+	}
+	if al, ok := dataBaseCache.get(name); ok {
+		o.alias = al
+		if Debug {
+			o.db = newDbQueryLog(al, al.DB)
+		} else {
+			o.db = al.DB
+		}
+	} else {
+		return fmt.Errorf("<Ormer.Using> unknown db alias name `%s`", name)
+	}
+	return nil
 }
-func (o *ormBase) RawWithCtx(ctx context.Context, query string, args ...interface{}) RawSeter {
+
+// begin transaction
+func (o *orm) Begin() error {
+	return o.BeginTx(context.Background(), nil)
+}
+
+func (o *orm) BeginTx(ctx context.Context, opts *sql.TxOptions) error {
+	if o.isTx {
+		return ErrTxHasBegan
+	}
+	var tx *sql.Tx
+	tx, err := o.db.(txer).BeginTx(ctx, opts)
+	if err != nil {
+		return err
+	}
+	o.isTx = true
+	if Debug {
+		o.db.(*dbQueryLog).SetDB(tx)
+	} else {
+		o.db = tx
+	}
+	return nil
+}
+
+// commit transaction
+func (o *orm) Commit() error {
+	if !o.isTx {
+		return ErrTxDone
+	}
+	err := o.db.(txEnder).Commit()
+	if err == nil {
+		o.isTx = false
+		o.Using(o.alias.Name)
+	} else if err == sql.ErrTxDone {
+		return ErrTxDone
+	}
+	return err
+}
+
+// rollback transaction
+func (o *orm) Rollback() error {
+	if !o.isTx {
+		return ErrTxDone
+	}
+	err := o.db.(txEnder).Rollback()
+	if err == nil {
+		o.isTx = false
+		o.Using(o.alias.Name)
+	} else if err == sql.ErrTxDone {
+		return ErrTxDone
+	}
+	return err
+}
+
+// return a raw query seter for raw sql string.
+func (o *orm) Raw(query string, args ...interface{}) RawSeter {
 	return newRawSet(o, query, args)
 }
 
 // return current using database Driver
-func (o *ormBase) Driver() Driver {
+func (o *orm) Driver() Driver {
 	return driver(o.alias.Name)
 }
 
 // return sql.DBStats for current database
-func (o *ormBase) DBStats() *sql.DBStats {
+func (o *orm) DBStats() *sql.DBStats {
 	if o.alias != nil && o.alias.DB != nil {
 		stats := o.alias.DB.DB.Stats()
 		return &stats
@@ -494,134 +532,48 @@ func (o *ormBase) DBStats() *sql.DBStats {
 	return nil
 }
 
-type orm struct {
-	ormBase
-}
-
-var _ Ormer = new(orm)
-
-func (o *orm) Begin() (TxOrmer, error) {
-	return o.BeginWithCtx(context.Background())
-}
-
-func (o *orm) BeginWithCtx(ctx context.Context) (TxOrmer, error) {
-	return o.BeginWithCtxAndOpts(ctx, nil)
-}
-
-func (o *orm) BeginWithOpts(opts *sql.TxOptions) (TxOrmer, error) {
-	return o.BeginWithCtxAndOpts(context.Background(), opts)
-}
-
-func (o *orm) BeginWithCtxAndOpts(ctx context.Context, opts *sql.TxOptions) (TxOrmer, error) {
-	tx, err := o.db.(txer).BeginTx(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	_txOrm := &txOrm{
-		ormBase: ormBase{
-			alias: o.alias,
-			db:    &TxDB{tx: tx},
-		},
-	}
-
-	var taskTxOrm TxOrmer = _txOrm
-	return taskTxOrm, nil
-}
-
-func (o *orm) DoTx(task func(ctx context.Context, txOrm TxOrmer) error) error {
-	return o.DoTxWithCtx(context.Background(), task)
-}
-
-func (o *orm) DoTxWithCtx(ctx context.Context, task func(ctx context.Context, txOrm TxOrmer) error) error {
-	return o.DoTxWithCtxAndOpts(ctx, nil, task)
-}
-
-func (o *orm) DoTxWithOpts(opts *sql.TxOptions, task func(ctx context.Context, txOrm TxOrmer) error) error {
-	return o.DoTxWithCtxAndOpts(context.Background(), opts, task)
-}
-
-func (o *orm) DoTxWithCtxAndOpts(ctx context.Context, opts *sql.TxOptions, task func(ctx context.Context, txOrm TxOrmer) error) error {
-	return doTxTemplate(o, ctx, opts, task)
-}
-
-func doTxTemplate(o TxBeginner, ctx context.Context, opts *sql.TxOptions,
-	task func(ctx context.Context, txOrm TxOrmer) error) error {
-	_txOrm, err := o.BeginWithCtxAndOpts(ctx, opts)
-	if err != nil {
-		return err
-	}
-	panicked := true
-	defer func() {
-		if panicked || err != nil {
-			e := _txOrm.Rollback()
-			if e != nil {
-				logs.Error("rollback transaction failed: %v,%v", e, panicked)
-			}
-		} else {
-			e := _txOrm.Commit()
-			if e != nil {
-				logs.Error("commit transaction failed: %v,%v", e, panicked)
-			}
-		}
-	}()
-	var taskTxOrm = _txOrm
-	err = task(ctx, taskTxOrm)
-	panicked = false
-	return err
-}
-
-type txOrm struct {
-	ormBase
-}
-
-var _ TxOrmer = new(txOrm)
-
-func (t *txOrm) Commit() error {
-	return t.db.(txEnder).Commit()
-}
-
-func (t *txOrm) Rollback() error {
-	return t.db.(txEnder).Rollback()
-}
-
 // NewOrm create new orm
 func NewOrm() Ormer {
 	BootStrap() // execute only once
-	return NewOrmUsingDB(`default`)
-}
 
-// NewOrmUsingDB create new orm with the name
-func NewOrmUsingDB(aliasName string) Ormer {
-	if al, ok := dataBaseCache.get(aliasName); ok {
-		return newDBWithAlias(al)
-	} else {
-		panic(fmt.Errorf("<Ormer.Using> unknown db alias name `%s`", aliasName))
+	o := new(orm)
+	err := o.Using("default")
+	if err != nil {
+		panic(err)
 	}
+	return o
 }
 
 // NewOrmWithDB create a new ormer object with specify *sql.DB for query
-func NewOrmWithDB(driverName, aliasName string, db *sql.DB, params ...DBOption) (Ormer, error) {
-	al, err := newAliasWithDb(aliasName, driverName, db, params...)
-	if err != nil {
-		return nil, err
+func NewOrmWithDB(driverName, aliasName string, db *sql.DB) (Ormer, error) {
+	var al *alias
+
+	if dr, ok := drivers[driverName]; ok {
+		al = new(alias)
+		al.DbBaser = dbBasers[dr]
+		al.Driver = dr
+	} else {
+		return nil, fmt.Errorf("driver name `%s` have not registered", driverName)
 	}
 
-	return newDBWithAlias(al), nil
-}
+	al.Name = aliasName
+	al.DriverName = driverName
+	al.DB = &DB{
+		RWMutex:        new(sync.RWMutex),
+		DB:             db,
+		stmtDecorators: newStmtDecoratorLruWithEvict(),
+	}
 
-func newDBWithAlias(al *alias) Ormer {
+	detectTZ(al)
+
 	o := new(orm)
 	o.alias = al
 
 	if Debug {
-		o.db = newDbQueryLog(al, al.DB)
+		o.db = newDbQueryLog(o.alias, db)
 	} else {
-		o.db = al.DB
+		o.db = db
 	}
 
-	if len(globalFilterChains) > 0 {
-		return NewFilterOrmDecorator(o, globalFilterChains...)
-	}
-	return o
+	return o, nil
 }

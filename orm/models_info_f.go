@@ -89,7 +89,7 @@ func (f *fields) GetByAny(name string) (*fieldInfo, bool) {
 	return nil, false
 }
 
-// create new field info collection
+// 创建新的字段信息集合
 func newFields() *fields {
 	f := new(fields)
 	f.fields = make(map[string]*fieldInfo)
@@ -137,10 +137,9 @@ type fieldInfo struct {
 	isFielder           bool // implement Fielder interface
 	onDelete            string
 	description         string
-	timePrecision       *int
 }
 
-// new field info
+// 新字段信息
 func newFieldInfo(mi *modelInfo, field reflect.Value, sf reflect.StructField, mName string) (fi *fieldInfo, err error) {
 	var (
 		tag       string
@@ -154,10 +153,10 @@ func newFieldInfo(mi *modelInfo, field reflect.Value, sf reflect.StructField, mN
 
 	fi = new(fieldInfo)
 
-	// if field which CanAddr is the follow type
-	//  A value is addressable if it is an element of a slice,
-	//  an element of an addressable array, a field of an
-	//  addressable struct, or the result of dereferencing a pointer.
+	// 如果CanAddr的字段是跟随类型
+	// 如果一个值是一个片断的元素，它就是可寻址的。
+	// 可寻址数组的一个元素、可寻址结构的一个字段，或者是对一个指针的解读结果。
+	// 可寻址结构中的一个字段，或者是对一个指针进行解读的结果。
 	addrField = field
 	if field.CanAddr() && field.Kind() != reflect.Ptr {
 		addrField = field.Addr()
@@ -168,6 +167,7 @@ func newFieldInfo(mi *modelInfo, field reflect.Value, sf reflect.StructField, mN
 		}
 	}
 
+	// 解析多个的情况
 	attrs, tags = parseStructTag(sf.Tag.Get(defaultStructTagName))
 
 	if _, ok := attrs["-"]; ok {
@@ -178,7 +178,7 @@ func newFieldInfo(mi *modelInfo, field reflect.Value, sf reflect.StructField, mN
 	decimals := tags["decimals"]
 	size := tags["size"]
 	onDelete := tags["on_delete"]
-	precision := tags["precision"]
+
 	initial.Clear()
 	if v, ok := tags["default"]; ok {
 		initial.Set(v)
@@ -194,7 +194,7 @@ checkType:
 		}
 		fieldType = f.FieldType()
 		if fieldType&IsRelField > 0 {
-			err = fmt.Errorf("unsupport type custom field, please refer to https://github.com/beego/beego/v2/blob/master/orm/models_fields.go#L24-L42")
+			err = fmt.Errorf("unsupport type custom field, please refer to https://github.com/astaxie/beego/blob/master/orm/models_fields.go#L24-L42")
 			goto end
 		}
 	default:
@@ -378,18 +378,6 @@ checkType:
 		fi.index = false
 		fi.unique = false
 	case TypeTimeField, TypeDateField, TypeDateTimeField:
-		if fieldType == TypeDateTimeField {
-			if precision != "" {
-				v, e := StrTo(precision).Int()
-				if e != nil {
-					err = fmt.Errorf("convert %s to int error:%v", precision, e)
-				} else {
-					fi.timePrecision = &v
-				}
-			}
-
-		}
-
 		if attrs["auto_now"] {
 			fi.autoNow = true
 		} else if attrs["auto_now_add"] {

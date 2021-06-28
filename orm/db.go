@@ -21,8 +21,6 @@ import (
 	"reflect"
 	"strings"
 	"time"
-
-	"github.com/beego/beego/v2/client/orm/hints"
 )
 
 const (
@@ -38,11 +36,10 @@ var (
 
 var (
 	operators = map[string]bool{
-		"exact":       true,
-		"iexact":      true,
-		"strictexact": true,
-		"contains":    true,
-		"icontains":   true,
+		"exact":     true,
+		"iexact":    true,
+		"contains":  true,
+		"icontains": true,
 		// "regex":       true,
 		// "iregex":      true,
 		"gt":          true,
@@ -67,7 +64,7 @@ var (
 	}
 )
 
-// an instance of dbBaser interface/
+// dbBaser接口的一个实例
 type dbBase struct {
 	ins dbBaser
 }
@@ -487,14 +484,7 @@ func (d *dbBase) InsertValue(q dbQuerier, mi *modelInfo, isMulti bool, names []s
 			if isMulti {
 				return res.RowsAffected()
 			}
-
-			lastInsertId, err := res.LastInsertId()
-			if err != nil {
-				DebugLog.Println(ErrLastInsertIdUnavailable, ':', err)
-				return lastInsertId, ErrLastInsertIdUnavailable
-			} else {
-				return lastInsertId, nil
-			}
+			return res.LastInsertId()
 		}
 		return 0, err
 	}
@@ -524,7 +514,7 @@ func (d *dbBase) InsertOrUpdate(q dbQuerier, mi *modelInfo, ind reflect.Value, a
 		return 0, fmt.Errorf("`%s` nonsupport InsertOrUpdate in beego", a.DriverName)
 	}
 
-	// Get on the key-value pairs
+	//Get on the key-value pairs
 	for _, v := range args {
 		kv := strings.Split(v, "=")
 		if len(kv) == 2 {
@@ -559,7 +549,7 @@ func (d *dbBase) InsertOrUpdate(q dbQuerier, mi *modelInfo, ind reflect.Value, a
 				updates[i] = v + "=" + valueStr
 			case DRPostgres:
 				if conflitValue != nil {
-					// postgres ON CONFLICT DO UPDATE SET can`t use colu=colu+values
+					//postgres ON CONFLICT DO UPDATE SET can`t use colu=colu+values
 					updates[i] = fmt.Sprintf("%s=(select %s from %s where %s = ? )", v, valueStr, mi.table, args0)
 					updateValues = append(updateValues, conflitValue)
 				} else {
@@ -584,7 +574,7 @@ func (d *dbBase) InsertOrUpdate(q dbQuerier, mi *modelInfo, ind reflect.Value, a
 	if isMulti {
 		qmarks = strings.Repeat(qmarks+"), (", multi-1) + qmarks
 	}
-	// conflitValue maybe is a int,can`t use fmt.Sprintf
+	//conflitValue maybe is a int,can`t use fmt.Sprintf
 	query := fmt.Sprintf("INSERT INTO %s%s%s (%s%s%s) VALUES (%s) %s "+qupdates, Q, mi.table, Q, Q, columns, Q, qmarks, iouStr)
 
 	d.ins.ReplaceMarks(&query)
@@ -595,14 +585,7 @@ func (d *dbBase) InsertOrUpdate(q dbQuerier, mi *modelInfo, ind reflect.Value, a
 			if isMulti {
 				return res.RowsAffected()
 			}
-
-			lastInsertId, err := res.LastInsertId()
-			if err != nil {
-				DebugLog.Println(ErrLastInsertIdUnavailable, ':', err)
-				return lastInsertId, ErrLastInsertIdUnavailable
-			} else {
-				return lastInsertId, nil
-			}
+			return res.LastInsertId()
 		}
 		return 0, err
 	}
@@ -755,10 +738,8 @@ func (d *dbBase) UpdateBatch(q dbQuerier, qs *querySet, mi *modelInfo, cond *Con
 	}
 
 	tables := newDbTables(mi, d.ins)
-	var specifyIndexes string
 	if qs != nil {
 		tables.parseRelated(qs.related, qs.relDepth)
-		specifyIndexes = tables.getIndexSql(mi.table, qs.useIndex, qs.indexes)
 	}
 
 	where, args := tables.getCondSQL(cond, false, tz)
@@ -809,12 +790,9 @@ func (d *dbBase) UpdateBatch(q dbQuerier, qs *querySet, mi *modelInfo, cond *Con
 	sets := strings.Join(cols, ", ") + " "
 
 	if d.ins.SupportUpdateJoin() {
-		query = fmt.Sprintf("UPDATE %s%s%s T0 %s%sSET %s%s", Q, mi.table, Q, specifyIndexes, join, sets, where)
+		query = fmt.Sprintf("UPDATE %s%s%s T0 %sSET %s%s", Q, mi.table, Q, join, sets, where)
 	} else {
-		supQuery := fmt.Sprintf("SELECT T0.%s%s%s FROM %s%s%s T0 %s%s%s",
-			Q, mi.fields.pk.column, Q,
-			Q, mi.table, Q,
-			specifyIndexes, join, where)
+		supQuery := fmt.Sprintf("SELECT T0.%s%s%s FROM %s%s%s T0 %s%s", Q, mi.fields.pk.column, Q, Q, mi.table, Q, join, where)
 		query = fmt.Sprintf("UPDATE %s%s%s SET %sWHERE %s%s%s IN ( %s )", Q, mi.table, Q, sets, Q, mi.fields.pk.column, Q, supQuery)
 	}
 
@@ -865,10 +843,8 @@ func (d *dbBase) DeleteBatch(q dbQuerier, qs *querySet, mi *modelInfo, cond *Con
 	tables := newDbTables(mi, d.ins)
 	tables.skipEnd = true
 
-	var specifyIndexes string
 	if qs != nil {
 		tables.parseRelated(qs.related, qs.relDepth)
-		specifyIndexes = tables.getIndexSql(mi.table, qs.useIndex, qs.indexes)
 	}
 
 	if cond == nil || cond.IsEmpty() {
@@ -881,7 +857,7 @@ func (d *dbBase) DeleteBatch(q dbQuerier, qs *querySet, mi *modelInfo, cond *Con
 	join := tables.getJoinSQL()
 
 	cols := fmt.Sprintf("T0.%s%s%s", Q, mi.fields.pk.column, Q)
-	query := fmt.Sprintf("SELECT %s FROM %s%s%s T0 %s%s%s", cols, Q, mi.table, Q, specifyIndexes, join, where)
+	query := fmt.Sprintf("SELECT %s FROM %s%s%s T0 %s%s", cols, Q, mi.table, Q, join, where)
 
 	d.ins.ReplaceMarks(&query)
 
@@ -1026,7 +1002,6 @@ func (d *dbBase) ReadBatch(q dbQuerier, qs *querySet, mi *modelInfo, cond *Condi
 	orderBy := tables.getOrderSQL(qs.orders)
 	limit := tables.getLimitSQL(mi, offset, rlimit)
 	join := tables.getJoinSQL()
-	specifyIndexes := tables.getIndexSql(mi.table, qs.useIndex, qs.indexes)
 
 	for _, tbl := range tables.tables {
 		if tbl.sel {
@@ -1040,11 +1015,9 @@ func (d *dbBase) ReadBatch(q dbQuerier, qs *querySet, mi *modelInfo, cond *Condi
 	if qs.distinct {
 		sqlSelect += " DISTINCT"
 	}
-	query := fmt.Sprintf("%s %s FROM %s%s%s T0 %s%s%s%s%s%s",
-		sqlSelect, sels, Q, mi.table, Q,
-		specifyIndexes, join, where, groupBy, orderBy, limit)
+	query := fmt.Sprintf("%s %s FROM %s%s%s T0 %s%s%s%s%s", sqlSelect, sels, Q, mi.table, Q, join, where, groupBy, orderBy, limit)
 
-	if qs.forUpdate {
+	if qs.forupdate {
 		query += " FOR UPDATE"
 	}
 
@@ -1180,13 +1153,10 @@ func (d *dbBase) Count(q dbQuerier, qs *querySet, mi *modelInfo, cond *Condition
 	groupBy := tables.getGroupSQL(qs.groups)
 	tables.getOrderSQL(qs.orders)
 	join := tables.getJoinSQL()
-	specifyIndexes := tables.getIndexSql(mi.table, qs.useIndex, qs.indexes)
 
 	Q := d.ins.TableQuote()
 
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s%s%s T0 %s%s%s%s",
-		Q, mi.table, Q,
-		specifyIndexes, join, where, groupBy)
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s%s%s T0 %s%s%s", Q, mi.table, Q, join, where, groupBy)
 
 	if groupBy != "" {
 		query = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS T", query)
@@ -1356,14 +1326,7 @@ setValue:
 				t   time.Time
 				err error
 			)
-
-			if fi.timePrecision != nil && len(s) >= (20+*fi.timePrecision) {
-				layout := formatDateTime + "."
-				for i := 0; i < *fi.timePrecision; i++ {
-					layout += "0"
-				}
-				t, err = time.ParseInLocation(layout, s[:20+*fi.timePrecision], tz)
-			} else if len(s) >= 19 {
+			if len(s) >= 19 {
 				s = s[:19]
 				t, err = time.ParseInLocation(formatDateTime, s, tz)
 			} else if len(s) >= 10 {
@@ -1717,7 +1680,6 @@ func (d *dbBase) ReadValues(q dbQuerier, qs *querySet, mi *modelInfo, cond *Cond
 	orderBy := tables.getOrderSQL(qs.orders)
 	limit := tables.getLimitSQL(mi, qs.offset, qs.limit)
 	join := tables.getJoinSQL()
-	specifyIndexes := tables.getIndexSql(mi.table, qs.useIndex, qs.indexes)
 
 	sels := strings.Join(cols, ", ")
 
@@ -1725,10 +1687,7 @@ func (d *dbBase) ReadValues(q dbQuerier, qs *querySet, mi *modelInfo, cond *Cond
 	if qs.distinct {
 		sqlSelect += " DISTINCT"
 	}
-	query := fmt.Sprintf("%s %s FROM %s%s%s T0 %s%s%s%s%s%s",
-		sqlSelect, sels,
-		Q, mi.table, Q,
-		specifyIndexes, join, where, groupBy, orderBy, limit)
+	query := fmt.Sprintf("%s %s FROM %s%s%s T0 %s%s%s%s%s", sqlSelect, sels, Q, mi.table, Q, join, where, groupBy, orderBy, limit)
 
 	d.ins.ReplaceMarks(&query)
 
@@ -1820,6 +1779,10 @@ func (d *dbBase) ReadValues(q dbQuerier, qs *querySet, mi *modelInfo, cond *Cond
 	}
 
 	return cnt, nil
+}
+
+func (d *dbBase) RowsTo(dbQuerier, *querySet, *modelInfo, *Condition, interface{}, string, string, *time.Location) (int64, error) {
+	return 0, nil
 }
 
 // flag of update joined record.
@@ -1936,30 +1899,4 @@ func (d *dbBase) ShowColumnsQuery(table string) string {
 // not implement.
 func (d *dbBase) IndexExists(dbQuerier, string, string) bool {
 	panic(ErrNotImplement)
-}
-
-// GenerateSpecifyIndex return a specifying index clause
-func (d *dbBase) GenerateSpecifyIndex(tableName string, useIndex int, indexes []string) string {
-	var s []string
-	Q := d.TableQuote()
-	for _, index := range indexes {
-		tmp := fmt.Sprintf(`%s%s%s`, Q, index, Q)
-		s = append(s, tmp)
-	}
-
-	var useWay string
-
-	switch useIndex {
-	case hints.KeyUseIndex:
-		useWay = `USE`
-	case hints.KeyForceIndex:
-		useWay = `FORCE`
-	case hints.KeyIgnoreIndex:
-		useWay = `IGNORE`
-	default:
-		DebugLog.Println("[WARN] Not a valid specifying action, so that action is ignored")
-		return ``
-	}
-
-	return fmt.Sprintf(` %s INDEX(%s) `, useWay, strings.Join(s, `,`))
 }
